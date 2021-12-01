@@ -13,6 +13,8 @@ sealed class CardIssuer(open val displayName: String) {
     object UnionPay : CardIssuer("UnionPay")
     object Unknown : CardIssuer("Unknown")
     object Visa : CardIssuer("Visa")
+    object Uzcard : CardIssuer("Uzcard")
+    object Humo : CardIssuer("Humo")
 }
 
 /**

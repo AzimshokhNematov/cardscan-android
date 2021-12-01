@@ -33,6 +33,8 @@ package com.getbouncer.scan.payment.card
  * | UnionPay                  | 18      | Unknown                              |
  * | UnionPay                  | 19      | 6 - 13                               |
  * | Visa                      | 16      | 4 - 4 - 4 - 4                        |
+ * | Uzcard                    | 16      | 4 - 4 - 4 - 4                        |
+ * | Humo                      | 16      | 4 - 4 - 4 - 4                        |
  * | ------------------------- | ------- | ------------------------------------ |
  */
 
@@ -128,6 +130,14 @@ private val PAN_FORMAT_TABLE: Map<CardIssuer, Map<Int, PanFormatter>> = mapOf(
     ),
 
     CardIssuer.Visa to mapOf(
+        16 to PanFormatter(4, 4, 4, 4)
+    ),
+
+    CardIssuer.Uzcard to mapOf(
+        16 to PanFormatter(4, 4, 4, 4)
+    ),
+
+    CardIssuer.Humo to mapOf(
         16 to PanFormatter(4, 4, 4, 4)
     )
 )
