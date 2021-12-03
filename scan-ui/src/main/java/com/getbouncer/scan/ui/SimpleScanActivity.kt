@@ -345,7 +345,7 @@ abstract class SimpleScanActivity : ScanActivity() {
         }
 
         logoView.contentDescription = getString(R.string.bouncer_cardscan_logo)
-        logoView.setVisible(Config.displayLogo)
+        logoView.setVisible(false)
     }
 
     private fun setupVersionUi() {
