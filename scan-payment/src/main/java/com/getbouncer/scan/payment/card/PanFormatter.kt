@@ -41,6 +41,10 @@ package com.getbouncer.scan.payment.card
 /**
  * Format a card PAN for display.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun formatPan(pan: String) = normalizeCardNumber(pan).let {
     val issuer = getCardIssuer(pan)
     val formatter = CUSTOM_PAN_FORMAT_TABLE[issuer]?.get(pan.length)
@@ -51,6 +55,10 @@ fun formatPan(pan: String) = normalizeCardNumber(pan).let {
 /**
  * Add a new way to format a PAN
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun addFormatPan(cardIssuer: CardIssuer, length: Int, vararg blockSizes: Int) {
     CUSTOM_PAN_FORMAT_TABLE.getOrPut(cardIssuer, { mutableMapOf<Int, PanFormatter>() })[length] =
         PanFormatter(*blockSizes)

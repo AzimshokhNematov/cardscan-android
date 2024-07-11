@@ -35,10 +35,10 @@ class TextDetectTest {
         val fetcher = TextDetect.ModelFetcher(testContext)
         fetcher.clearCache()
 
-        val factory = TextDetect.Factory(testContext, fetcher.fetchData(false))
+        val factory = TextDetect.Factory(testContext, fetcher.fetchData(forImmediateUse = false, isOptional = false))
 
         assertNotNull(factory.newInstance())
-    }.let { Unit }
+    }.let { }
 
     @Test
     @SmallTest

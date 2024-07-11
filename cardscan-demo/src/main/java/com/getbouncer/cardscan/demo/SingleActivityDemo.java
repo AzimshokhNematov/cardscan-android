@@ -3,6 +3,7 @@ package com.getbouncer.cardscan.demo;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.PointF;
 import android.os.Bundle;
 import android.os.Handler;
@@ -28,16 +29,15 @@ import com.getbouncer.cardscan.ui.result.MainLoopAggregator;
 import com.getbouncer.cardscan.ui.result.MainLoopState;
 import com.getbouncer.scan.camera.CameraAdapter;
 import com.getbouncer.scan.camera.CameraErrorListener;
-import com.getbouncer.scan.camera.camera1.Camera1Adapter;
+import com.getbouncer.scan.camera.CameraPreviewImage;
+import com.getbouncer.scan.camera.CameraSelectorKt;
 import com.getbouncer.scan.framework.AggregateResultListener;
 import com.getbouncer.scan.framework.AnalyzerLoopErrorListener;
 import com.getbouncer.scan.framework.Config;
 import com.getbouncer.scan.framework.Stats;
-import com.getbouncer.scan.framework.TrackedImage;
 import com.getbouncer.scan.framework.api.BouncerApi;
 import com.getbouncer.scan.framework.api.dto.ScanStatistics;
 import com.getbouncer.scan.framework.interop.BlockingAggregateResultListener;
-import com.getbouncer.scan.framework.interop.EmptyJavaContinuation;
 import com.getbouncer.scan.framework.util.AppDetails;
 import com.getbouncer.scan.framework.util.Device;
 import com.getbouncer.scan.payment.card.CardExpiryKt;
@@ -82,7 +82,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
 
     private TextView cardPanTextView;
 
-    private CameraAdapter<TrackedImage> cameraAdapter;
+    private CameraAdapter<CameraPreviewImage<Bitmap>> cameraAdapter;
 
     private CardScanFlow cardScanFlow;
 
@@ -226,13 +226,18 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
         // ensure the cameraPreview view has rendered.
         cameraPreview.post(() -> {
             // Track scan statistics for health check
-            Stats.INSTANCE.startScan(new EmptyJavaContinuation<>());
+            Stats.INSTANCE.startScan();
 
             // Tell the background where to draw a hole for the viewfinder window
             viewFinderBackground.setViewFinderRect(ViewExtensionsKt.asRect(viewFinderWindow));
 
             // Create a camera adapter and bind it to this activity.
-            cameraAdapter = new Camera1Adapter(this, cameraPreview, MINIMUM_RESOLUTION, this, this);
+            cameraAdapter = CameraSelectorKt.getCameraAdapter(
+                this,
+                cameraPreview,
+                MINIMUM_RESOLUTION,
+                this
+            );
             cameraAdapter.bindToLifecycle(this);
             cameraAdapter.withFlashSupport(supported -> {
                 flashButtonView.setVisibility(supported ? View.VISIBLE : View.INVISIBLE);
@@ -244,13 +249,11 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
                 true,
                 true,
                 aggregateResultListener,
-                this,
-                completionLoopListener
+                this
             );
             cardScanFlow.startFlow(
                 this,
                 cameraAdapter.getImageStream(),
-                new Size(cameraPreview.getWidth(), cameraPreview.getHeight()),
                 ViewExtensionsKt.asRect(viewFinderWindow),
                 this,
                 this
@@ -335,7 +338,6 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
      * Close the scanner.
      */
     private void closeScanner() {
-        Stats.INSTANCE.finishScan(new EmptyJavaContinuation<>());
         setFlashlightState(false);
         scanCardButton.setVisibility(View.VISIBLE);
         scanView.setVisibility(View.GONE);
@@ -449,7 +451,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
                     final String pan = state.getMostLikelyPan();
                     if (pan != null) {
                         cardPanTextView.setText(PanFormatterKt.formatPan(pan));
-                        ViewExtensionsKt.fadeIn(cardPanTextView, null);
+                        ViewExtensionsKt.show(cardPanTextView);
                     }
                     setStateFound();
 
@@ -460,7 +462,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
                     final String pan = state.getMostLikelyPan();
                     if (pan != null) {
                         cardPanTextView.setText(PanFormatterKt.formatPan(pan));
-                        ViewExtensionsKt.fadeIn(cardPanTextView, null);
+                        ViewExtensionsKt.show(cardPanTextView);
                     }
 
                     setStateFound();
@@ -472,7 +474,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
                     final String pan = state.getPan();
                     if (pan != null) {
                         cardPanTextView.setText(PanFormatterKt.formatPan(pan));
-                        ViewExtensionsKt.fadeIn(cardPanTextView, null);
+                        ViewExtensionsKt.show(cardPanTextView);
                     }
 
                     setStateFound();
@@ -495,6 +497,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
             SingleActivityDemo.this.pan = result.getPan();
             cardScanFlow.launchCompletionLoop(
                 SingleActivityDemo.this,
+                completionLoopListener,
                 cardScanFlow.selectCompletionLoopFrames(
                     result.getAverageFrameRate(),
                     result.getSavedFrames()
@@ -542,7 +545,7 @@ public class SingleActivityDemo extends AppCompatActivity implements CameraError
     private void setStateCorrect() {
         if (scanState == State.CORRECT) return;
         ViewExtensionsKt.startAnimation(viewFinderBorder, R.drawable.bouncer_card_border_correct);
-        ViewExtensionsKt.fadeIn(processingOverlay, null);
+        ViewExtensionsKt.show(processingOverlay);
         scanState = State.CORRECT;
     }
 }

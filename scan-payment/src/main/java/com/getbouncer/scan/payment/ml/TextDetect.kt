@@ -1,6 +1,7 @@
 package com.getbouncer.scan.payment.ml
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
@@ -9,16 +10,18 @@ import com.getbouncer.scan.framework.Config
 import com.getbouncer.scan.framework.FetchedData
 import com.getbouncer.scan.framework.TrackedImage
 import com.getbouncer.scan.framework.UpdatingModelWebFetcher
+import com.getbouncer.scan.framework.image.MLImage
+import com.getbouncer.scan.framework.image.scale
+import com.getbouncer.scan.framework.image.toMLImage
 import com.getbouncer.scan.framework.ml.TFLAnalyzerFactory
 import com.getbouncer.scan.framework.ml.TensorFlowLiteAnalyzer
 import com.getbouncer.scan.framework.ml.hardNonMaximumSuppression
 import com.getbouncer.scan.framework.ml.ssd.rectForm
+import com.getbouncer.scan.payment.cropCameraPreviewToSquare
 import com.getbouncer.scan.payment.hasOpenGl31
 import com.getbouncer.scan.payment.ml.ssd.DetectionBox
-import com.getbouncer.scan.payment.ml.ssd.cropImageForObjectDetect
 import com.getbouncer.scan.payment.ml.yolo.processYoloLayer
-import com.getbouncer.scan.payment.scale
-import com.getbouncer.scan.payment.toRGBByteBuffer
+import kotlinx.coroutines.runBlocking
 import org.tensorflow.lite.Interpreter
 import java.io.FileNotFoundException
 import java.nio.ByteBuffer
@@ -68,17 +71,52 @@ private val DIM_Z = (NUM_CLASS + 5) * 3
 private const val BOX_TOP_DELTA_THRESHOLD = 0.4F
 private const val HEIGHT_RATIO_THRESHOLD = 0.3F
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 class TextDetect private constructor(interpreter: Interpreter) :
-    TensorFlowLiteAnalyzer<TextDetect.Input, Array<ByteBuffer>,
+    TensorFlowLiteAnalyzer<
+        TextDetect.Input,
+        Array<ByteBuffer>,
         TextDetect.Prediction,
         Map<Int, Array<Array<Array<FloatArray>>>>>(interpreter) {
 
+    companion object {
+        /**
+         * Convert a camera preview image into a CardDetect input
+         */
+        fun cameraPreviewToInput(
+            cameraPreviewImage: TrackedImage<Bitmap>,
+            previewBounds: Rect,
+            viewFinder: Rect,
+        ) = Input(
+            TrackedImage(
+                cropCameraPreviewToSquare(
+                    cameraPreviewImage = cameraPreviewImage.image,
+                    previewBounds = previewBounds,
+                    viewFinder = viewFinder,
+                )
+                    .scale(TRAINED_IMAGE_SIZE)
+                    .toMLImage()
+                    .also { runBlocking { cameraPreviewImage.tracker.trackResult("text_detect_image_cropped") } },
+                cameraPreviewImage.tracker,
+            )
+        )
+    }
+
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Input(
-        val fullImage: TrackedImage,
-        val previewSize: Size,
-        val cardFinder: Rect
+        val textDetectImage: TrackedImage<MLImage>,
     )
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Prediction(
         val allObjects: List<DetectionBox>,
         val nameBoxes: List<DetectionBox>,
@@ -156,7 +194,7 @@ class TextDetect private constructor(interpreter: Interpreter) :
             nameBoxes?.subBoxes ?: emptyList(),
             outputBoxes.filter { it.label == LABELS.EXPIRATION_DATE.ordinal }.sortedByDescending { it.confidence }.take(2)
         ).also {
-            data.fullImage.tracker.trackResult("text_detect_prediction_complete")
+            data.textDetectImage.tracker.trackResult("text_detect_prediction_complete")
         }
     }
 
@@ -295,18 +333,6 @@ class TextDetect private constructor(interpreter: Interpreter) :
     }
 
     /**
-     * Calculates a component of the name score derived from the delta of rect.top  of
-     * the proposed name box and the pan box
-     */
-    private fun getYDistScore(prediction: DetectionBox, panBox: DetectionBox): Float {
-        val mean = 2.146477635934552f // -2.136458074582795f //
-        val std = 0.6993319317136948f // 0.7293684170784801f //
-        val panHeight = panBox.rect.height()
-        val yDist = (panBox.rect.top - prediction.rect.top) / panHeight
-        return (-1 / 2f) * (abs(yDist - mean) / std).pow(2)
-    }
-
-    /**
      * Calculates a component of the name score derived from the height ratio between the
      * proposed name box and the pan box
      */
@@ -339,18 +365,7 @@ class TextDetect private constructor(interpreter: Interpreter) :
         return nameWidthScore
     }
 
-    override suspend fun transformData(data: Input): Array<ByteBuffer> = arrayOf(
-        cropImageForObjectDetect(
-            data.fullImage.image,
-            data.previewSize,
-            data.cardFinder
-        )
-            .scale(TRAINED_IMAGE_SIZE)
-            .toRGBByteBuffer()
-            .also {
-                data.fullImage.tracker.trackResult("text_detect_image_cropped")
-            }
-    )
+    override suspend fun transformData(data: Input): Array<ByteBuffer> = arrayOf(data.textDetectImage.image.getData())
 
     override suspend fun executeInference(
         tfInterpreter: Interpreter,
@@ -381,11 +396,15 @@ class TextDetect private constructor(interpreter: Interpreter) :
      * A factory for creating instances of this analyzer. This downloads the model from the web. If unable to download
      * from the web, this will throw a [FileNotFoundException].
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     class Factory(
         context: Context,
         fetchedModel: FetchedData,
         threads: Int = DEFAULT_THREADS
-    ) : TFLAnalyzerFactory<Input, Unit, Prediction, TextDetect>(context, fetchedModel) {
+    ) : TFLAnalyzerFactory<Input, Prediction, TextDetect>(context, fetchedModel) {
         companion object {
             private const val USE_GPU = false
             private const val DEFAULT_THREADS = 1
@@ -402,6 +421,10 @@ class TextDetect private constructor(interpreter: Interpreter) :
     /**
      * A fetcher for downloading model data.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     class ModelFetcher(context: Context) : UpdatingModelWebFetcher(context) {
         override val modelClass: String = "text_detection"
         override val modelFrameworkVersion: Int = 1

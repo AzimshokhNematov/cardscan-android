@@ -1,12 +1,17 @@
 package com.getbouncer.scan.payment.ml
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Size
 import com.getbouncer.scan.framework.FetchedData
 import com.getbouncer.scan.framework.TrackedImage
 import com.getbouncer.scan.framework.UpdatingModelWebFetcher
+import com.getbouncer.scan.framework.image.crop
+import com.getbouncer.scan.framework.image.scale
+import com.getbouncer.scan.framework.image.size
+import com.getbouncer.scan.framework.image.toMLImage
 import com.getbouncer.scan.framework.ml.TFLAnalyzerFactory
 import com.getbouncer.scan.framework.ml.TensorFlowLiteAnalyzer
 import com.getbouncer.scan.framework.ml.greedyNonMaxSuppression
@@ -15,11 +20,9 @@ import com.getbouncer.scan.framework.util.scaled
 import com.getbouncer.scan.payment.card.formatExpiry
 import com.getbouncer.scan.payment.card.isValidExpiry
 import com.getbouncer.scan.payment.card.isValidMonth
-import com.getbouncer.scan.payment.crop
+import com.getbouncer.scan.payment.cropCameraPreviewToSquare
 import com.getbouncer.scan.payment.hasOpenGl31
-import com.getbouncer.scan.payment.scale
-import com.getbouncer.scan.payment.size
-import com.getbouncer.scan.payment.toRGBByteBuffer
+import kotlinx.coroutines.runBlocking
 import org.tensorflow.lite.Interpreter
 import java.io.FileNotFoundException
 import java.nio.ByteBuffer
@@ -33,15 +36,56 @@ private const val BACKGROUND_CLASS = 10
 
 private val ASPECT_RATIO = TRAINED_IMAGE_SIZE.height.toFloat() / TRAINED_IMAGE_SIZE.width.toFloat()
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 class ExpiryDetect private constructor(interpreter: Interpreter) :
-    TensorFlowLiteAnalyzer<ExpiryDetect.Input, ByteBuffer,
+    TensorFlowLiteAnalyzer<
+        ExpiryDetect.Input,
+        ByteBuffer,
         ExpiryDetect.Prediction,
         Array<Array<Array<FloatArray>>>>(interpreter) {
 
-    data class Input(val image: TrackedImage, val expiryBox: RectF)
+    companion object {
+        /**
+         * Convert a camera preview image into a CardDetect input
+         */
+        fun cameraPreviewToInput(
+            cameraPreviewImage: TrackedImage<Bitmap>,
+            previewBounds: Rect,
+            viewFinder: Rect,
+            expiryBox: RectF,
+        ) = Input(
+            TrackedImage(
+                cropCameraPreviewToSquare(
+                    cameraPreviewImage = cameraPreviewImage.image,
+                    previewBounds = previewBounds,
+                    viewFinder = viewFinder,
+                )
+                    .also { runBlocking { cameraPreviewImage.tracker.trackResult("expiry_detect_image_cropped") } },
+                cameraPreviewImage.tracker,
+            ),
+            expiryBox
+        )
+    }
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    data class Input(val expiryDetectImage: TrackedImage<Bitmap>, val expiryBox: RectF)
+
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Prediction(val expiry: Expiry?)
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Expiry(val month: String, val year: String) : Comparable<Expiry> {
         override fun toString() = formatExpiry(
             day = null,
@@ -88,13 +132,13 @@ class ExpiryDetect private constructor(interpreter: Interpreter) :
         } else {
             Prediction(null)
         }.also {
-            data.image.tracker.trackResult("expiry_detect_prediction_complete")
+            data.expiryDetectImage.tracker.trackResult("expiry_detect_prediction_complete")
         }
     }
 
     override suspend fun transformData(data: Input): ByteBuffer {
         val targetAspectRatio = ASPECT_RATIO
-        val scaledRect = data.expiryBox.scaled(data.image.image.size())
+        val scaledRect = data.expiryBox.scaled(data.expiryDetectImage.image.size())
         val scaledExpRectNewHeight = scaledRect.width() * targetAspectRatio
 
         val rect = Rect(
@@ -104,12 +148,13 @@ class ExpiryDetect private constructor(interpreter: Interpreter) :
             (scaledRect.centerY() + scaledExpRectNewHeight / 2).roundToInt()
         )
 
-        return data.image.image
+        return data.expiryDetectImage.image
             .crop(rect)
             .scale(TRAINED_IMAGE_SIZE)
-            .toRGBByteBuffer()
+            .toMLImage()
+            .getData()
             .also {
-                data.image.tracker.trackResult("expiry_detect_image_cropped")
+                data.expiryDetectImage.tracker.trackResult("expiry_detect_image_cropped")
             }
     }
 
@@ -126,11 +171,15 @@ class ExpiryDetect private constructor(interpreter: Interpreter) :
      * A factory for creating instances of this analyzer. This downloads the model from the web. If unable to download
      * from the web, this will throw a [FileNotFoundException].
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     class Factory(
         context: Context,
         fetchedModel: FetchedData,
         threads: Int = DEFAULT_THREADS
-    ) : TFLAnalyzerFactory<Input, Unit, Prediction, ExpiryDetect>(context, fetchedModel) {
+    ) : TFLAnalyzerFactory<Input, Prediction, ExpiryDetect>(context, fetchedModel) {
         companion object {
             private const val USE_GPU = false
             private const val DEFAULT_THREADS = 1
@@ -147,6 +196,10 @@ class ExpiryDetect private constructor(interpreter: Interpreter) :
     /**
      * A fetcher for downloading model data.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     class ModelFetcher(context: Context) : UpdatingModelWebFetcher(context) {
         override val defaultModelVersion: String = "0.0.1.16"
         override val defaultModelHash: String = "55eea0d57239a7e92904fb15209963f7236bd06919275bdeb0a765a94b559c97"

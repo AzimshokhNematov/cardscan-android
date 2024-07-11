@@ -1,6 +1,8 @@
 package com.getbouncer.scan.ui
 
 import android.annotation.SuppressLint
+import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.PointF
 import android.graphics.Typeface
 import android.os.Bundle
@@ -14,13 +16,11 @@ import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
+import com.getbouncer.scan.camera.CameraPreviewImage
 import com.getbouncer.scan.framework.Config
-import com.getbouncer.scan.framework.TrackedImage
 import com.getbouncer.scan.framework.util.getSdkVersion
 import com.getbouncer.scan.ui.util.asRect
 import com.getbouncer.scan.ui.util.dpToPixels
-import com.getbouncer.scan.ui.util.fadeIn
-import com.getbouncer.scan.ui.util.fadeOut
 import com.getbouncer.scan.ui.util.getColorByRes
 import com.getbouncer.scan.ui.util.getDrawableByRes
 import com.getbouncer.scan.ui.util.getFloatResource
@@ -28,21 +28,32 @@ import com.getbouncer.scan.ui.util.hide
 import com.getbouncer.scan.ui.util.setDrawable
 import com.getbouncer.scan.ui.util.setTextSizeByRes
 import com.getbouncer.scan.ui.util.setVisible
+import com.getbouncer.scan.ui.util.show
 import com.getbouncer.scan.ui.util.startAnimation
 import kotlinx.coroutines.flow.Flow
+import kotlin.math.min
+import kotlin.math.roundToInt
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 abstract class SimpleScanActivity : ScanActivity() {
 
     /**
      * The state of the scan flow. This can be expanded if [displayState] is overridden to handle
      * the added states.
      */
-    abstract class ScanState {
-        object NotFound : ScanState()
-        object FoundShort : ScanState()
-        object FoundLong : ScanState()
-        object Correct : ScanState()
-        object Wrong : ScanState()
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    abstract class ScanState(val isFinal: Boolean) {
+        object NotFound : ScanState(isFinal = false)
+        object FoundShort : ScanState(isFinal = false)
+        object FoundLong : ScanState(isFinal = false)
+        object Correct : ScanState(isFinal = true)
+        object Wrong : ScanState(isFinal = false)
     }
 
     companion object {
@@ -78,6 +89,11 @@ abstract class SimpleScanActivity : ScanActivity() {
      * The view that a user can tap to turn on the flashlight.
      */
     protected open val torchButtonView: View by lazy { ImageView(this) }
+
+    /**
+     * The view that a user can tap to swap cameras.
+     */
+    protected open val swapCameraButtonView: View by lazy { ImageView(this) }
 
     /**
      * The text view that informs the user what to do.
@@ -121,7 +137,7 @@ abstract class SimpleScanActivity : ScanActivity() {
 
     private val logoView: ImageView by lazy { ImageView(this) }
 
-    private val versionTextView: TextView by lazy { TextView(this) }
+    protected open val versionTextView: TextView by lazy { TextView(this) }
 
     /**
      * The aspect ratio of the view finder.
@@ -132,6 +148,11 @@ abstract class SimpleScanActivity : ScanActivity() {
      * Determine if the flashlight is supported.
      */
     protected var isFlashlightSupported: Boolean? = null
+
+    /**
+     * Determine if multiple cameras are available.
+     */
+    protected var hasMultipleCameras: Boolean? = null
 
     /**
      * The flow used to scan an item.
@@ -161,6 +182,7 @@ abstract class SimpleScanActivity : ScanActivity() {
 
         closeButtonView.setOnClickListener { userCancelScan() }
         torchButtonView.setOnClickListener { toggleFlashlight() }
+        swapCameraButtonView.setOnClickListener { toggleCamera() }
 
         viewFinderBorderView.setOnTouchListener { _, e ->
             setFocus(PointF(e.x + viewFinderWindowView.left, e.y + viewFinderWindowView.top))
@@ -203,6 +225,7 @@ abstract class SimpleScanActivity : ScanActivity() {
             instructionsTextView,
             closeButtonView,
             torchButtonView,
+            swapCameraButtonView,
             cardNameTextView,
             cardNumberTextView,
             debugImageView,
@@ -225,6 +248,7 @@ abstract class SimpleScanActivity : ScanActivity() {
     protected open fun setupUiComponents() {
         setupCloseButtonViewUi()
         setupTorchButtonViewUi()
+        setupSwapCameraButtonViewUi()
         setupViewFinderViewUI()
         setupInstructionsViewUi()
         setupSecurityNoticeUi()
@@ -254,7 +278,7 @@ abstract class SimpleScanActivity : ScanActivity() {
     }
 
     protected open fun setupTorchButtonViewUi() {
-        torchButtonView.setVisible(isFlashlightSupported ?: false)
+        torchButtonView.setVisible(isFlashlightSupported == true)
         when (val view = torchButtonView) {
             is ImageView -> {
                 view.contentDescription = getString(R.string.bouncer_torch_button_description)
@@ -278,6 +302,28 @@ abstract class SimpleScanActivity : ScanActivity() {
                     view.setTextColor(getColorByRes(R.color.bouncerFlashButtonDarkColor))
                 } else {
                     view.setTextColor(getColorByRes(R.color.bouncerFlashButtonLightColor))
+                }
+            }
+        }
+    }
+
+    protected open fun setupSwapCameraButtonViewUi() {
+        swapCameraButtonView.setVisible(hasMultipleCameras == true)
+        when (val view = swapCameraButtonView) {
+            is ImageView -> {
+                view.contentDescription = getString(R.string.bouncer_swap_camera_button_description)
+                if (isBackgroundDark()) {
+                    view.setDrawable(R.drawable.bouncer_camera_swap_dark)
+                } else {
+                    view.setDrawable(R.drawable.bouncer_camera_swap_light)
+                }
+            }
+            is TextView -> {
+                view.text = getString(R.string.bouncer_swap_camera_button_description)
+                if (isBackgroundDark()) {
+                    view.setTextColor(getColorByRes(R.color.bouncerCameraSwapButtonDarkColor))
+                } else {
+                    view.setTextColor(getColorByRes(R.color.bouncerCameraSwapButtonLightColor))
                 }
             }
         }
@@ -362,6 +408,7 @@ abstract class SimpleScanActivity : ScanActivity() {
         setupPreviewFrameConstraints()
         setupCloseButtonViewConstraints()
         setupTorchButtonViewConstraints()
+        setupSwapCameraButtonViewConstraints()
         setupViewFinderConstraints()
         setupInstructionsViewConstraints()
         setupSecurityNoticeConstraints()
@@ -378,7 +425,12 @@ abstract class SimpleScanActivity : ScanActivity() {
         closeButtonView.layoutParams = ConstraintLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, // width
             ViewGroup.LayoutParams.WRAP_CONTENT, // height
-        )
+        ).apply {
+            topMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            bottomMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginStart = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginEnd = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+        }
 
         closeButtonView.addConstraints {
             connect(it.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
@@ -390,11 +442,33 @@ abstract class SimpleScanActivity : ScanActivity() {
         torchButtonView.layoutParams = ConstraintLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, // width
             ViewGroup.LayoutParams.WRAP_CONTENT, // height
-        )
+        ).apply {
+            topMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            bottomMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginStart = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginEnd = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+        }
 
         torchButtonView.addConstraints {
             connect(it.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
             connect(it.id, ConstraintSet.END, ConstraintSet.PARENT_ID, ConstraintSet.END)
+        }
+    }
+
+    protected open fun setupSwapCameraButtonViewConstraints() {
+        swapCameraButtonView.layoutParams = ConstraintLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, // width
+            ViewGroup.LayoutParams.WRAP_CONTENT, // height
+        ).apply {
+            topMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            bottomMargin = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginStart = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+            marginEnd = resources.getDimensionPixelSize(R.dimen.bouncerButtonMargin)
+        }
+
+        swapCameraButtonView.addConstraints {
+            connect(it.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
+            connect(it.id, ConstraintSet.START, ConstraintSet.PARENT_ID, ConstraintSet.START)
         }
     }
 
@@ -403,12 +477,17 @@ abstract class SimpleScanActivity : ScanActivity() {
 
         viewFinderBackgroundView.constrainToParent()
 
+        val screenSize = Resources.getSystem().displayMetrics.let {
+            Size(it.widthPixels, it.heightPixels)
+        }
+        val viewFinderMargin = (min(screenSize.width, screenSize.height) * getFloatResource(R.dimen.bouncerViewFinderMargin)).roundToInt()
+
         listOf(viewFinderWindowView, viewFinderBorderView).forEach { view ->
             view.layoutParams = ConstraintLayout.LayoutParams(0, 0).apply {
-                topMargin = resources.getDimensionPixelSize(R.dimen.bouncerViewFinderMargin)
-                bottomMargin = resources.getDimensionPixelSize(R.dimen.bouncerViewFinderMargin)
-                marginStart = resources.getDimensionPixelSize(R.dimen.bouncerViewFinderMargin)
-                marginEnd = resources.getDimensionPixelSize(R.dimen.bouncerViewFinderMargin)
+                topMargin = viewFinderMargin
+                bottomMargin = viewFinderMargin
+                marginStart = viewFinderMargin
+                marginEnd = viewFinderMargin
             }
 
             view.constrainToParent()
@@ -564,7 +643,7 @@ abstract class SimpleScanActivity : ScanActivity() {
      * Change the state of the scanner.
      */
     protected fun changeScanState(newState: ScanState): Boolean {
-        if (newState == scanStatePrevious) {
+        if (newState == scanStatePrevious || scanStatePrevious?.isFinal == true) {
             return false
         }
 
@@ -589,20 +668,20 @@ abstract class SimpleScanActivity : ScanActivity() {
                 viewFinderWindowView.setBackgroundResource(R.drawable.bouncer_card_background_found)
                 viewFinderBorderView.startAnimation(R.drawable.bouncer_card_border_found)
                 instructionsTextView.setText(R.string.bouncer_card_scan_instructions)
-                instructionsTextView.fadeIn()
+                instructionsTextView.show()
             }
             is ScanState.FoundLong -> {
                 viewFinderBackgroundView.setBackgroundColor(getColorByRes(R.color.bouncerFoundBackground))
                 viewFinderWindowView.setBackgroundResource(R.drawable.bouncer_card_background_found)
                 viewFinderBorderView.startAnimation(R.drawable.bouncer_card_border_found_long)
                 instructionsTextView.setText(R.string.bouncer_card_scan_instructions)
-                instructionsTextView.fadeIn()
+                instructionsTextView.show()
             }
             is ScanState.Correct -> {
                 viewFinderBackgroundView.setBackgroundColor(getColorByRes(R.color.bouncerCorrectBackground))
                 viewFinderWindowView.setBackgroundResource(R.drawable.bouncer_card_background_correct)
                 viewFinderBorderView.startAnimation(R.drawable.bouncer_card_border_correct)
-                instructionsTextView.fadeOut()
+                instructionsTextView.hide()
             }
             is ScanState.Wrong -> {
                 viewFinderBackgroundView.setBackgroundColor(getColorByRes(R.color.bouncerWrongBackground))
@@ -627,6 +706,11 @@ abstract class SimpleScanActivity : ScanActivity() {
     override fun onFlashSupported(supported: Boolean) {
         isFlashlightSupported = supported
         torchButtonView.setVisible(supported)
+    }
+
+    override fun onSupportsMultipleCameras(supported: Boolean) {
+        hasMultipleCameras = supported
+        swapCameraButtonView.setVisible(supported)
     }
 
     /**
@@ -655,11 +739,10 @@ abstract class SimpleScanActivity : ScanActivity() {
     /**
      * Once the camera stream is available, start processing images.
      */
-    override fun onCameraStreamAvailable(cameraStream: Flow<TrackedImage>) {
+    override fun onCameraStreamAvailable(cameraStream: Flow<CameraPreviewImage<Bitmap>>) {
         scanFlow.startFlow(
             context = this,
             imageStream = cameraStream,
-            previewSize = Size(previewFrame.width, previewFrame.height),
             viewFinder = viewFinderWindowView.asRect(),
             lifecycleOwner = this,
             coroutineScope = this,

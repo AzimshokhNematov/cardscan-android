@@ -5,50 +5,38 @@ import androidx.annotation.CheckResult
 import com.getbouncer.scan.framework.time.Clock
 import com.getbouncer.scan.framework.time.ClockMark
 import com.getbouncer.scan.framework.time.Duration
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 object Stats {
     val instanceId = UUID.randomUUID().toString()
 
     var scanId: String? = null
         private set
 
+    private var persistentRepeatingTasks: MutableMap<String, MutableMap<String, RepeatingTaskStats>> = mutableMapOf()
     private var tasks: MutableMap<String, List<TaskStats>> = mutableMapOf()
     private var repeatingTasks: MutableMap<String, MutableMap<String, RepeatingTaskStats>> = mutableMapOf()
 
     private val scanIdMutex = Mutex()
     private val taskMutex = Mutex()
     private val repeatingTaskMutex = Mutex()
+    private val persistentRepeatingTasksMutex = Mutex()
 
-    suspend fun startScan() {
-        scanIdMutex.withLock {
-            if (scanId == null) {
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+    fun startScan() {
+        runBlocking {
+            scanIdMutex.withLock {
+                clearAllTasks()
                 scanId = UUID.randomUUID().toString()
             }
-        }
-    }
-
-    suspend fun finishScan() {
-        scanIdMutex.withLock {
-            scanId = null
-        }
-    }
-
-    /**
-     * Reset all tracked stats.
-     */
-    suspend fun resetStats() {
-        taskMutex.withLock {
-            tasks = mutableMapOf()
-        }
-
-        repeatingTaskMutex.withLock {
-            repeatingTasks = mutableMapOf()
         }
     }
 
@@ -56,6 +44,7 @@ object Stats {
      * Track the duration of a task.
      */
     @CheckResult
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     fun trackTask(name: String): StatTracker =
         if (!Config.trackStats) StatTrackerNoOpImpl else StatTrackerImpl { startedAt, result ->
             taskMutex.withLock {
@@ -74,6 +63,7 @@ object Stats {
     /**
      * Track the result of a task.
      */
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     suspend fun <T> trackTask(name: String, task: suspend () -> T): T {
         val tracker = trackTask(name)
         val result: T
@@ -92,6 +82,7 @@ object Stats {
      * Track a single execution of a repeating task.
      */
     @CheckResult
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     fun trackRepeatingTask(name: String): StatTracker =
         if (!Config.trackStats) StatTrackerNoOpImpl else StatTrackerImpl { startedAt, result ->
             repeatingTaskMutex.withLock {
@@ -130,9 +121,52 @@ object Stats {
         }
 
     /**
+     * Track a single execution of a repeating task that should not be cleared on scan start.
+     */
+    @CheckResult
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+    fun trackPersistentRepeatingTask(name: String): StatTracker =
+        if (!Config.trackStats) StatTrackerNoOpImpl else StatTrackerImpl { startedAt, result ->
+            persistentRepeatingTasksMutex.withLock {
+                val resultName = result ?: "null"
+                val resultStats = persistentRepeatingTasks[name] ?: run {
+                    val taskStats = mutableMapOf<String, RepeatingTaskStats>()
+                    persistentRepeatingTasks[name] = taskStats
+                    taskStats
+                }
+
+                val taskStats = resultStats[resultName]
+                val duration = startedAt.elapsedSince()
+                if (taskStats == null) {
+                    resultStats[resultName] = RepeatingTaskStats(
+                        executions = 1,
+                        startedAt = startedAt,
+                        totalDuration = duration,
+                        totalCpuDuration = duration,
+                        minimumDuration = duration,
+                        maximumDuration = duration,
+                    )
+                } else {
+                    resultStats[resultName] = RepeatingTaskStats(
+                        executions = taskStats.executions + 1,
+                        startedAt = taskStats.startedAt,
+                        totalDuration = taskStats.startedAt.elapsedSince(),
+                        totalCpuDuration = taskStats.totalCpuDuration + duration,
+                        minimumDuration = minOf(taskStats.minimumDuration, duration),
+                        maximumDuration = maxOf(taskStats.maximumDuration, duration),
+                    )
+                }
+            }
+            if (Config.isDebug) {
+                Log.v(Config.logTag, "Persistent repeating task $name got result $result after ${startedAt.elapsedSince()}")
+            }
+        }
+
+    /**
      * Track the result of a task.
      */
-    fun <T> trackRepeatingTask(name: String, task: () -> T): T {
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+    suspend fun <T> trackRepeatingTask(name: String, task: () -> T): T {
         val tracker = trackRepeatingTask(name)
         val result: T
         try {
@@ -148,49 +182,69 @@ object Stats {
 
     @JvmStatic
     @CheckResult
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     fun getRepeatingTasks() = runBlocking {
         repeatingTaskMutex.withLock {
-            repeatingTasks.toMap().mapValues { entry -> entry.value.toMap() }
+            persistentRepeatingTasksMutex.withLock {
+                repeatingTasks.toMap().mapValues { entry -> entry.value.toMap() } +
+                    persistentRepeatingTasks.toMap().mapValues { entry -> entry.value.toMap() }
+            }
         }
     }
 
     @JvmStatic
     @CheckResult
-    fun getTasks() = tasks.toMap()
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+    fun getTasks() = runBlocking {
+        taskMutex.withLock { tasks.toMap() }
+    }
+
+    private suspend fun clearAllTasks() = supervisorScope {
+        val tasksAsync = async { taskMutex.withLock { tasks.clear() } }
+        val repeatingTasksAsync = async { repeatingTaskMutex.withLock { repeatingTasks.clear() } }
+
+        tasksAsync.await()
+        repeatingTasksAsync.await()
+    }
 }
 
 /**
  * Keep track of a single stat's duration and result
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 interface StatTracker {
 
     /**
      * When this task was started.
      */
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     val startedAt: ClockMark
 
     /**
      * Track the result from a stat.
      */
-    fun trackResult(result: String? = null)
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+    suspend fun trackResult(result: String? = null)
 }
 
 private object StatTrackerNoOpImpl : StatTracker {
     override val startedAt = Clock.markNow()
-    override fun trackResult(result: String?) { /* do nothing */ }
+    override suspend fun trackResult(result: String?) { /* do nothing */ }
 }
 
 private class StatTrackerImpl(private val onComplete: suspend (ClockMark, String?) -> Unit) : StatTracker {
     override val startedAt = Clock.markNow()
-    override fun trackResult(result: String?) { GlobalScope.launch { onComplete(startedAt, result) } }
+    override suspend fun trackResult(result: String?) = coroutineScope { launch { onComplete(startedAt, result) } }.let { Unit }
 }
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class TaskStats(
     val started: ClockMark,
     val duration: Duration,
     val result: String?,
 )
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class RepeatingTaskStats(
     val executions: Int,
     val startedAt: ClockMark,

@@ -4,14 +4,18 @@ import android.util.Size
 import com.getbouncer.scan.framework.ml.ssd.SizeAndCenter
 import com.getbouncer.scan.framework.ml.ssd.clampAll
 import com.getbouncer.scan.framework.ml.ssd.sizeAndCenter
-import com.getbouncer.scan.payment.ml.SSDOcr
 import kotlin.math.sqrt
 
 private const val NUMBER_OF_PRIORS = 3
 
-internal fun combinePriors(): Array<SizeAndCenter> {
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun combinePriors(trainedImageSize: Size): Array<SizeAndCenter> {
     val priorsOne: Array<SizeAndCenter> =
         generatePriors(
+            trainedImageSize = trainedImageSize,
             featureMapSize = Size(38, 24),
             shrinkage = Size(16, 16),
             boxSizeMin = 14F,
@@ -21,6 +25,7 @@ internal fun combinePriors(): Array<SizeAndCenter> {
 
     val priorsTwo: Array<SizeAndCenter> =
         generatePriors(
+            trainedImageSize = trainedImageSize,
             featureMapSize = Size(19, 12),
             shrinkage = Size(31, 31),
             boxSizeMin = 30F,
@@ -32,22 +37,23 @@ internal fun combinePriors(): Array<SizeAndCenter> {
 }
 
 private fun generatePriors(
+    trainedImageSize: Size,
     featureMapSize: Size,
     shrinkage: Size,
     boxSizeMin: Float,
     boxSizeMax: Float,
     aspectRatio: Float
 ): Array<SizeAndCenter> {
-    val scaleWidth = SSDOcr.Factory.TRAINED_IMAGE_SIZE.width.toFloat() / shrinkage.width
-    val scaleHeight = SSDOcr.Factory.TRAINED_IMAGE_SIZE.height.toFloat() / shrinkage.height
+    val scaleWidth = trainedImageSize.width.toFloat() / shrinkage.width
+    val scaleHeight = trainedImageSize.height.toFloat() / shrinkage.height
     val ratio = sqrt(aspectRatio)
 
     fun generatePrior(column: Int, row: Int, sizeFactor: Float, ratio: Float) =
         sizeAndCenter(
             centerX = (column + 0.5F) / scaleWidth,
             centerY = (row + 0.5F) / scaleHeight,
-            width = sizeFactor / SSDOcr.Factory.TRAINED_IMAGE_SIZE.width,
-            height = sizeFactor / SSDOcr.Factory.TRAINED_IMAGE_SIZE.height * ratio
+            width = sizeFactor / trainedImageSize.width,
+            height = sizeFactor / trainedImageSize.height * ratio
         )
 
     return Array(featureMapSize.width * featureMapSize.height * NUMBER_OF_PRIORS) { index ->

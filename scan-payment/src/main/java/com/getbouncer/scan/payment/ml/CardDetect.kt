@@ -1,100 +1,68 @@
 package com.getbouncer.scan.payment.ml
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Size
 import com.getbouncer.scan.framework.FetchedData
 import com.getbouncer.scan.framework.TrackedImage
-import com.getbouncer.scan.framework.UpdatingResourceFetcher
+import com.getbouncer.scan.framework.image.MLImage
+import com.getbouncer.scan.framework.image.scale
+import com.getbouncer.scan.framework.image.toMLImage
 import com.getbouncer.scan.framework.ml.TFLAnalyzerFactory
 import com.getbouncer.scan.framework.ml.TensorFlowLiteAnalyzer
 import com.getbouncer.scan.framework.util.indexOfMax
-import com.getbouncer.scan.framework.util.maxAspectRatioInSize
-import com.getbouncer.scan.framework.util.scaleAndCenterWithin
-import com.getbouncer.scan.payment.R
-import com.getbouncer.scan.payment.crop
+import com.getbouncer.scan.payment.cropCameraPreviewToSquare
 import com.getbouncer.scan.payment.hasOpenGl31
-import com.getbouncer.scan.payment.scale
-import com.getbouncer.scan.payment.size
-import com.getbouncer.scan.payment.toRGBByteBuffer
+import kotlinx.coroutines.runBlocking
 import org.tensorflow.lite.Interpreter
 import java.nio.ByteBuffer
 import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 private val TRAINED_IMAGE_SIZE = Size(224, 224)
 
 /** model returns whether or not there is a card present */
 private const val NUM_CLASS = 3
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 class CardDetect private constructor(interpreter: Interpreter) :
     TensorFlowLiteAnalyzer<CardDetect.Input, ByteBuffer, CardDetect.Prediction, Array<FloatArray>>(interpreter) {
 
     companion object {
         /**
-         * Given a card finder region of a preview image, calculate the associated card detection
-         * square.
+         * Convert a camera preview image into a CardDetect input
          */
-        private fun calculateCardDetectionFromCardFinder(previewImage: Size, cardFinder: Rect): Rect {
-            val cardDetectionSquareSize = maxAspectRatioInSize(previewImage, 1F)
-            return Rect(
-                /* left */
-                max(0, cardFinder.centerX() - cardDetectionSquareSize.width / 2),
-                /* top */
-                max(0, cardFinder.centerY() - cardDetectionSquareSize.height / 2),
-                /* right */
-                min(previewImage.width, cardFinder.centerX() + cardDetectionSquareSize.width / 2),
-                /* bottom */
-                min(previewImage.height, cardFinder.centerY() + cardDetectionSquareSize.height / 2)
+        fun cameraPreviewToInput(
+            cameraPreviewImage: TrackedImage<Bitmap>,
+            previewBounds: Rect,
+            cardFinder: Rect,
+        ) = Input(
+            TrackedImage(
+                cropCameraPreviewToSquare(cameraPreviewImage.image, previewBounds, cardFinder)
+                    .scale(TRAINED_IMAGE_SIZE)
+                    .toMLImage()
+                    .also { runBlocking { cameraPreviewImage.tracker.trackResult("card_detect_image_cropped") } },
+                cameraPreviewImage.tracker,
             )
-        }
-
-        /**
-         * Calculate what portion of the full image should be cropped for card detection based on
-         * the position of card finder within the preview image.
-         */
-        fun calculateCrop(fullImage: Size, previewImage: Size, cardFinder: Rect): Rect {
-            require(
-                cardFinder.left >= 0 &&
-                    cardFinder.right <= previewImage.width &&
-                    cardFinder.top >= 0 &&
-                    cardFinder.bottom <= previewImage.height
-            ) { "Card finder is outside preview image bounds" }
-
-            // Calculate the card detection square based on the card finder, limited by the preview
-            val cardDetectionSquare =
-                calculateCardDetectionFromCardFinder(
-                    previewImage,
-                    cardFinder
-                )
-
-            val scaledPreviewImage = previewImage.scaleAndCenterWithin(fullImage)
-            val previewScale = scaledPreviewImage.width().toFloat() / previewImage.width
-
-            // Scale the cardDetectionSquare to match the scaledPreviewImage
-            val scaledCardDetectionSquare = Rect(
-                (cardDetectionSquare.left * previewScale).roundToInt(),
-                (cardDetectionSquare.top * previewScale).roundToInt(),
-                (cardDetectionSquare.right * previewScale).roundToInt(),
-                (cardDetectionSquare.bottom * previewScale).roundToInt()
-            )
-
-            // Position the scaledCardDetectionSquare on the fullImage
-            return Rect(
-                max(0, scaledCardDetectionSquare.left + scaledPreviewImage.left),
-                max(0, scaledCardDetectionSquare.top + scaledPreviewImage.top),
-                min(fullImage.width, scaledCardDetectionSquare.right + scaledPreviewImage.left),
-                min(fullImage.height, scaledCardDetectionSquare.bottom + scaledPreviewImage.top),
-            )
-        }
+        )
     }
 
-    data class Input(val fullImage: TrackedImage, val previewSize: Size, val cardFinder: Rect)
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    data class Input(val cardDetectImage: TrackedImage<MLImage>)
 
     /**
      * A prediction returned by this analyzer.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Prediction(
         val side: Side,
         val noCardProbability: Float,
@@ -130,7 +98,7 @@ class CardDetect private constructor(interpreter: Interpreter) :
             )
         }
 
-        data.fullImage.tracker.trackResult("card_detect_prediction_complete")
+        data.cardDetectImage.tracker.trackResult("card_detect_prediction_complete")
 
         return Prediction(
             side = side,
@@ -140,19 +108,7 @@ class CardDetect private constructor(interpreter: Interpreter) :
         )
     }
 
-    override suspend fun transformData(data: Input): ByteBuffer = data.fullImage.image
-        .crop(
-            calculateCrop(
-                data.fullImage.image.size(),
-                data.previewSize,
-                data.cardFinder,
-            )
-        )
-        .scale(TRAINED_IMAGE_SIZE)
-        .toRGBByteBuffer()
-        .also {
-            data.fullImage.tracker.trackResult("card_detect_image_cropped")
-        }
+    override suspend fun transformData(data: Input): ByteBuffer = data.cardDetectImage.image.getData()
 
     override suspend fun executeInference(
         tfInterpreter: Interpreter,
@@ -170,10 +126,10 @@ class CardDetect private constructor(interpreter: Interpreter) :
         context: Context,
         fetchedModel: FetchedData,
         threads: Int = DEFAULT_THREADS,
-    ) : TFLAnalyzerFactory<Input, Unit, Prediction, CardDetect>(context, fetchedModel) {
+    ) : TFLAnalyzerFactory<Input, Prediction, CardDetect>(context, fetchedModel) {
         companion object {
             private const val USE_GPU = false
-            private const val DEFAULT_THREADS = 1
+            private const val DEFAULT_THREADS = 4
         }
 
         override val tfOptions: Interpreter.Options = Interpreter
@@ -182,17 +138,5 @@ class CardDetect private constructor(interpreter: Interpreter) :
             .setNumThreads(threads)
 
         override suspend fun newInstance(): CardDetect? = createInterpreter()?.let { CardDetect(it) }
-    }
-
-    /**
-     * A fetcher for downloading model data.
-     */
-    class ModelFetcher(context: Context) : UpdatingResourceFetcher(context) {
-        override val resource: Int = R.raw.ux_0_5_23_16
-        override val resourceModelVersion: String = "0.5.23.16"
-        override val resourceModelHash: String = "ea51ca5c693a4b8733b1cf1a63557a713a13fabf0bcb724385077694e63a51a7"
-        override val resourceModelHashAlgorithm: String = "SHA-256"
-        override val modelClass: String = "card_detection"
-        override val modelFrameworkVersion: Int = 1
     }
 }

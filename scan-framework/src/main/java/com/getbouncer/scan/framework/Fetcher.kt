@@ -2,31 +2,26 @@ package com.getbouncer.scan.framework
 
 import android.content.Context
 import android.util.Log
-import androidx.annotation.RawRes
 import com.getbouncer.scan.framework.api.NetworkResult
+import com.getbouncer.scan.framework.api.downloadFileWithRetries
 import com.getbouncer.scan.framework.api.getModelDetails
 import com.getbouncer.scan.framework.api.getModelSignedUrl
 import com.getbouncer.scan.framework.time.ClockMark
 import com.getbouncer.scan.framework.time.asEpochMillisecondsClockMark
-import com.getbouncer.scan.framework.time.weeks
+import com.getbouncer.scan.framework.time.days
+import com.getbouncer.scan.framework.util.HashMismatchException
+import com.getbouncer.scan.framework.util.calculateHash
+import com.getbouncer.scan.framework.util.fileMatchesHash
 import com.getbouncer.scan.framework.util.memoizeSuspend
-import com.getbouncer.scan.framework.util.retry
+import com.getbouncer.scan.framework.util.sanitizeFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileNotFoundException
-import java.io.FileOutputStream
 import java.io.IOException
-import java.lang.Exception
 import java.net.URL
-import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 
-private val CACHE_MODEL_TIME = 1.weeks
 private const val CACHE_MODEL_MAX_COUNT = 3
 
 private const val PURPOSE_MODEL_UPGRADE = "model_upgrade"
@@ -34,23 +29,28 @@ private const val PURPOSE_MODEL_UPGRADE = "model_upgrade"
 /**
  * Fetched data metadata.
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 sealed class FetchedModelMeta(open val modelVersion: String, open val hashAlgorithm: String)
+
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class FetchedModelFileMeta(
     override val modelVersion: String,
     override val hashAlgorithm: String,
     val modelFile: File?,
 ) : FetchedModelMeta(modelVersion, hashAlgorithm)
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class FetchedModelResourceMeta(
     override val modelVersion: String,
     override val hashAlgorithm: String,
     val hash: String,
-    @RawRes val resourceId: Int?,
+    val assetFileName: String?,
 ) : FetchedModelMeta(modelVersion, hashAlgorithm)
 
 /**
  * Fetched data information.
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 sealed class FetchedData(
     open val modelClass: String,
     open val modelFrameworkVersion: Int,
@@ -59,13 +59,14 @@ sealed class FetchedData(
     open val modelHashAlgorithm: String?,
 ) {
     companion object {
+        @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
         fun fromFetchedModelMeta(modelClass: String, modelFrameworkVersion: Int, meta: FetchedModelMeta) = when (meta) {
             is FetchedModelFileMeta ->
                 FetchedFile(
                     modelClass = modelClass,
                     modelFrameworkVersion = modelFrameworkVersion,
                     modelVersion = meta.modelVersion,
-                    modelHash = meta.modelFile?.let { runBlocking { calculateHash(it, meta.hashAlgorithm) } },
+                    modelHash = meta.modelFile?.let { runBlocking { try { calculateHash(it, meta.hashAlgorithm) } catch (t: Throwable) { null } } },
                     modelHashAlgorithm = meta.hashAlgorithm,
                     file = meta.modelFile
                 )
@@ -76,7 +77,7 @@ sealed class FetchedData(
                     modelVersion = meta.modelVersion,
                     modelHash = meta.hash,
                     modelHashAlgorithm = meta.hashAlgorithm,
-                    resourceId = meta.resourceId,
+                    assetFileName = meta.assetFileName,
                 )
         }
     }
@@ -84,17 +85,19 @@ sealed class FetchedData(
     abstract val successfullyFetched: Boolean
 }
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class FetchedResource(
     override val modelClass: String,
     override val modelFrameworkVersion: Int,
     override val modelVersion: String,
     override val modelHash: String?,
     override val modelHashAlgorithm: String?,
-    @RawRes val resourceId: Int?,
+    val assetFileName: String?,
 ) : FetchedData(modelClass, modelFrameworkVersion, modelVersion, modelHash, modelHashAlgorithm) {
-    override val successfullyFetched: Boolean = resourceId != null
+    override val successfullyFetched: Boolean = assetFileName != null
 }
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class FetchedFile(
     override val modelClass: String,
     override val modelFrameworkVersion: Int,
@@ -109,6 +112,7 @@ data class FetchedFile(
 /**
  * An interface for getting data ready to be loaded into memory.
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 interface Fetcher {
     val modelClass: String
     val modelFrameworkVersion: Int
@@ -116,37 +120,43 @@ interface Fetcher {
     /**
      * Prepare data to be loaded into memory. If the fetched data is to be used immediately, the fetcher will prioritize
      * fetching from the cache over getting the latest version.
+     *
+     * @param forImmediateUse: if there is a cached version of the model, return that immediately instead of downloading a new model
      */
-    suspend fun fetchData(forImmediateUse: Boolean): FetchedData
+    suspend fun fetchData(forImmediateUse: Boolean, isOptional: Boolean): FetchedData
+
+    suspend fun isCached(): Boolean
 }
 
 /**
  * A [Fetcher] that gets data from android resources.
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 abstract class ResourceFetcher : Fetcher {
     protected abstract val modelVersion: String
     protected abstract val hash: String
     protected abstract val hashAlgorithm: String
-    protected abstract val resource: Int
+    protected abstract val assetFileName: String
 
-    override suspend fun fetchData(forImmediateUse: Boolean): FetchedResource =
+    override suspend fun fetchData(forImmediateUse: Boolean, isOptional: Boolean): FetchedResource =
         FetchedResource(
             modelClass = modelClass,
             modelFrameworkVersion = modelFrameworkVersion,
             modelVersion = modelVersion,
             modelHash = hash,
             modelHashAlgorithm = hashAlgorithm,
-            resourceId = resource,
+            assetFileName = assetFileName,
         )
+
+    override suspend fun isCached(): Boolean = true
 }
 
 /**
  * A [Fetcher] that downloads data from the web.
  */
-sealed class WebFetcher : Fetcher {
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+sealed class WebFetcher(protected val context: Context) : Fetcher {
     protected data class DownloadDetails(val url: URL, val hash: String, val hashAlgorithm: String, val modelVersion: String)
-
-    private val fetchDataMutex = Mutex()
 
     /**
      * Keep track of any exceptions that occurred when fetching data  after the specified number of retries. This is
@@ -155,77 +165,137 @@ sealed class WebFetcher : Fetcher {
      */
     private var fetchException: Throwable? = null
 
-    override suspend fun fetchData(forImmediateUse: Boolean): FetchedData = fetchDataMutex.withLock {
-        val stat = Stats.trackRepeatingTask("web_fetcher_$modelClass")
+    override suspend fun fetchData(forImmediateUse: Boolean, isOptional: Boolean): FetchedData {
+        val stat = Stats.trackPersistentRepeatingTask("web_fetcher_$modelClass")
         val cachedData = FetchedData.fromFetchedModelMeta(modelClass, modelFrameworkVersion, tryFetchLatestCachedData())
 
-        // if a previous exception was encountered, attempt to fetch cached data
-        fetchException?.run {
-            if (cachedData.successfullyFetched) {
-                stat.trackResult("success")
-            } else {
-                stat.trackResult(this::class.java.simpleName)
-            }
-            return@withLock cachedData
-        }
-
-        // attempt to fetch the data from local cache if it's needed immediately
-        if (forImmediateUse) {
+        // attempt to fetch the data from local cache if it's needed immediately or downloading is not allowed
+        if (forImmediateUse || !Config.downloadModels) {
             tryFetchLatestCachedData().run {
                 val data = FetchedData.fromFetchedModelMeta(modelClass, modelFrameworkVersion, this)
                 if (data.successfullyFetched) {
+                    Log.d(Config.logTag, "Fetcher: $modelClass is needed immediately and cached version ${data.modelVersion} is available.")
                     stat.trackResult("success")
-                    return@withLock data
+                    return@fetchData data
                 }
             }
         }
 
-        // get details for downloading the data. If download details cannot be retrieved, use the latest cached version
-        val downloadDetails = getDownloadDetails(cachedData.modelHash, cachedData.modelHashAlgorithm) ?: run {
-            stat.trackResult("no_download_details")
-            return@withLock cachedData
-        }
-
-        // check the local cache for a matching model
-        tryFetchMatchingCachedFile(downloadDetails.hash, downloadDetails.hashAlgorithm).run {
-            val data = FetchedData.fromFetchedModelMeta(modelClass, modelFrameworkVersion, this)
-            if (data.successfullyFetched) {
-                stat.trackResult("success")
-                return@withLock data
-            }
-        }
-
-        // download the model
-        val downloadOutputFile = getDownloadOutputFile(downloadDetails.modelVersion)
-        try {
-            downloadAndVerify(
-                downloadDetails.url,
-                downloadOutputFile,
-                downloadDetails.hash,
-                downloadDetails.hashAlgorithm,
+        // if downloading models is not allowed, return an empty fetched data
+        if (!Config.downloadModels) {
+            Log.d(Config.logTag, "Fetcher: $modelClass cannot be downloaded since downloads are turned off")
+            stat.trackResult("downloads_disabled")
+            return FetchedData.fromFetchedModelMeta(
+                modelClass = modelClass,
+                modelFrameworkVersion = modelFrameworkVersion,
+                meta = FetchedModelFileMeta(
+                    modelVersion = cachedData.modelVersion,
+                    hashAlgorithm = cachedData.modelHashAlgorithm ?: "",
+                    modelFile = null,
+                ),
             )
+        }
+
+        // get details for downloading the data. If download details cannot be retrieved, use the latest cached version
+        val downloadDetails = fetchDownloadDetails(cachedData.modelHash, cachedData.modelHashAlgorithm) ?: run {
+            Log.d(Config.logTag, "Fetcher: not downloading $modelClass, using cached version ${cachedData.modelVersion}")
+            stat.trackResult("no_download_details")
+            return@fetchData cachedData
+        }
+
+        // if no cache is available, this is needed immediately, and this is optional, return a download failure
+        if (forImmediateUse && isOptional) {
+            Log.d(Config.logTag, "Fetcher: optional $modelClass needed for immediate use, but no cache available.")
+            stat.trackResult("optional_model_not_downloaded")
+            return FetchedData.fromFetchedModelMeta(
+                modelClass = modelClass,
+                modelFrameworkVersion = modelFrameworkVersion,
+                meta = FetchedModelFileMeta(
+                    modelVersion = downloadDetails.modelVersion,
+                    hashAlgorithm = downloadDetails.hashAlgorithm,
+                    modelFile = null,
+                ),
+            )
+        }
+
+        return try {
+            // check the local cache for a matching model
+            tryFetchMatchingCachedFile(downloadDetails.hash, downloadDetails.hashAlgorithm).run {
+                val data = FetchedData.fromFetchedModelMeta(modelClass, modelFrameworkVersion, this)
+                if (data.successfullyFetched) {
+                    Log.d(Config.logTag, "Fetcher: $modelClass already has latest version downloaded.")
+                    stat.trackResult("success_cached")
+                    return@fetchData data
+                }
+            }
+
+            downloadData(downloadDetails).also {
+                if (it.successfullyFetched) {
+                    Log.d(Config.logTag, "Fetcher: $modelClass successfully downloaded.")
+                    stat.trackResult("success_downloaded")
+                } else {
+                    Log.d(Config.logTag, "Fetcher: $modelClass failed to download from $downloadDetails.")
+                    stat.trackResult("download_failed")
+                }
+            }
         } catch (t: Throwable) {
             fetchException = t
             if (cachedData.successfullyFetched) {
-                Log.w(Config.logTag, "Failed to download model $modelClass, loaded from local cache", t)
-                stat.trackResult("success")
+                Log.w(Config.logTag, "Fetcher: Failed to download model $modelClass, loaded from local cache", t)
+                stat.trackResult("success_download_failed_but_cached")
             } else {
-                Log.e(Config.logTag, "Failed to download model $modelClass, no local cache available", t)
+                Log.e(Config.logTag, "Fetcher: Failed to download model $modelClass, no local cache available", t)
                 stat.trackResult(t::class.java.simpleName)
             }
-            return@withLock cachedData
+            cachedData
+        }
+    }
+
+    override suspend fun isCached(): Boolean = when (val meta = tryFetchLatestCachedData()) {
+        is FetchedModelFileMeta -> meta.modelFile != null
+        is FetchedModelResourceMeta -> true
+    }
+
+    /**
+     * Get information about what version of the model to download.
+     */
+    private val fetchDownloadDetails = memoizeSuspend(3.days) { cachedHash: String?, cachedHashAlgorithm: String? ->
+        getDownloadDetails(cachedHash, cachedHashAlgorithm)
+    }
+
+    /**
+     * Download the data using memoization so that data is only downloaded once.
+     */
+    private val downloadData = memoizeSuspend { downloadDetails: DownloadDetails ->
+        val downloadOutputFile = getDownloadOutputFile(downloadDetails.modelVersion)
+
+        // if a previous exception was encountered, attempt to fetch cached data
+        fetchException?.run {
+            Log.d(Config.logTag, "Fetcher: Previous exception encountered for $modelClass, rethrowing")
+            throw this
         }
 
-        cleanUpPostDownload(downloadOutputFile)
+        try {
+            downloadAndVerify(
+                context = context,
+                url = downloadDetails.url,
+                outputFile = downloadOutputFile,
+                hash = downloadDetails.hash,
+                hashAlgorithm = downloadDetails.hashAlgorithm,
+            )
 
-        FetchedFile(
-            modelClass = modelClass,
-            modelFrameworkVersion = modelFrameworkVersion,
-            modelVersion = downloadDetails.modelVersion,
-            modelHash = downloadDetails.hash,
-            modelHashAlgorithm = downloadDetails.hashAlgorithm,
-            file = downloadOutputFile,
-        )
+            Log.d(Config.logTag, "Fetcher: $modelClass downloaded version ${downloadDetails.modelVersion}")
+            return@memoizeSuspend FetchedFile(
+                modelClass = modelClass,
+                modelFrameworkVersion = modelFrameworkVersion,
+                modelVersion = downloadDetails.modelVersion,
+                modelHash = downloadDetails.hash,
+                modelHashAlgorithm = downloadDetails.hashAlgorithm,
+                file = downloadOutputFile,
+            )
+        } finally {
+            cleanUpPostDownload(downloadOutputFile)
+        }
     }
 
     /**
@@ -268,7 +338,8 @@ sealed class WebFetcher : Fetcher {
 /**
  * A [WebFetcher] that directly downloads a model.
  */
-abstract class DirectDownloadWebFetcher(private val context: Context) : WebFetcher() {
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+abstract class DirectDownloadWebFetcher(context: Context) : WebFetcher(context) {
     abstract val url: URL
     abstract val hash: String
     abstract val hashAlgorithm: String
@@ -289,7 +360,7 @@ abstract class DirectDownloadWebFetcher(private val context: Context) : WebFetch
         FetchedModelFileMeta(modelVersion, hashAlgorithm, null)
 
     override suspend fun getDownloadOutputFile(modelVersion: String) =
-        File(context.cacheDir, localFileName)
+        File(context.cacheDir, sanitizeFileName(localFileName))
 
     override suspend fun getDownloadDetails(
         cachedModelHash: String?,
@@ -310,7 +381,8 @@ abstract class DirectDownloadWebFetcher(private val context: Context) : WebFetch
 /**
  * A [WebFetcher] that uses the signed URL server endpoints to download data.
  */
-abstract class SignedUrlModelWebFetcher(private val context: Context) : DirectDownloadWebFetcher(context) {
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+abstract class SignedUrlModelWebFetcher(context: Context) : DirectDownloadWebFetcher(context) {
     abstract val modelFileName: String
 
     private val localFileName by lazy { "${modelClass}_${modelFileName}_$modelVersion" }
@@ -318,7 +390,7 @@ abstract class SignedUrlModelWebFetcher(private val context: Context) : DirectDo
     // this field is not used by this class
     override val url: URL = URL(NetworkConfig.baseUrl)
 
-    override suspend fun getDownloadOutputFile(modelVersion: String) = File(context.cacheDir, localFileName)
+    override suspend fun getDownloadOutputFile(modelVersion: String) = File(context.cacheDir, sanitizeFileName(localFileName))
 
     override suspend fun getDownloadDetails(
         cachedModelHash: String?,
@@ -328,15 +400,15 @@ abstract class SignedUrlModelWebFetcher(private val context: Context) : DirectDo
             try {
                 URL(signedUrlResponse.body.modelUrl)
             } catch (t: Throwable) {
-                Log.e(Config.logTag, "Invalid signed url for model $modelClass: ${signedUrlResponse.body.modelUrl}", t)
+                Log.e(Config.logTag, "Fetcher: Invalid signed url for model $modelClass: ${signedUrlResponse.body.modelUrl}", t)
                 null
             }
         is NetworkResult.Error -> {
-            Log.w(Config.logTag, "Failed to get signed url for model $modelClass: ${signedUrlResponse.error}")
+            Log.w(Config.logTag, "Fetcher: Failed to get signed url for model $modelClass: ${signedUrlResponse.error}")
             null
         }
         is NetworkResult.Exception -> {
-            Log.e(Config.logTag, "Exception fetching signed url for model $modelClass: ${signedUrlResponse.responseCode}", signedUrlResponse.exception)
+            Log.e(Config.logTag, "Fetcher: Exception fetching signed url for model $modelClass: ${signedUrlResponse.responseCode}", signedUrlResponse.exception)
             null
         }
     }?.let { DownloadDetails(it, hash, hashAlgorithm, modelVersion) }
@@ -346,7 +418,8 @@ abstract class SignedUrlModelWebFetcher(private val context: Context) : DirectDo
  * A [WebFetcher] that queries Bouncer servers for updated data. If a new version is found, download it. If the data
  * details match what is cached, return the cached version instead.
  */
-abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrlModelWebFetcher(context) {
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+abstract class UpdatingModelWebFetcher(context: Context) : SignedUrlModelWebFetcher(context) {
     abstract val defaultModelVersion: String
     abstract val defaultModelFileName: String
     abstract val defaultModelHash: String
@@ -370,7 +443,7 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
         getMatchingFile(hash, hashAlgorithm)?.let { FetchedModelFileMeta(it.name, defaultModelHashAlgorithm, it) } ?: FetchedModelFileMeta(defaultModelVersion, defaultModelHashAlgorithm, null)
 
     override suspend fun getDownloadOutputFile(modelVersion: String) =
-        File(getCacheFolder(), modelVersion)
+        File(getCacheFolder(), sanitizeFileName(modelVersion))
 
     override suspend fun getDownloadDetails(
         cachedModelHash: String?,
@@ -380,12 +453,14 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
 
         val nextUpgradeTime = getNextUpgradeTime()
         when {
+            Config.betaModelOptIn ->
+                Log.d(Config.logTag, "Fetcher: Beta opt-in, attempting to upgrade $modelClass")
             nextUpgradeTime.hasPassed() ->
-                Log.d(Config.logTag, "Time to upgrade $modelClass, fetching upgrade details")
+                Log.d(Config.logTag, "Fetcher: Time to upgrade $modelClass, fetching upgrade details")
             cachedModelHash == null ->
-                Log.d(Config.logTag, "Downloading initial version of $modelClass")
+                Log.d(Config.logTag, "Fetcher: Downloading initial version of $modelClass")
             else -> {
-                Log.d(Config.logTag, "Not yet time to upgrade $modelClass (will upgrade at $nextUpgradeTime)")
+                Log.d(Config.logTag, "Fetcher: Not yet time to upgrade $modelClass (will upgrade at $nextUpgradeTime)")
                 return null
             }
         }
@@ -413,15 +488,15 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
                         ).apply { cachedDownloadDetails = this }
                     }
                 } catch (t: Throwable) {
-                    Log.e(Config.logTag, "Invalid signed url for model $modelClass: ${detailsResponse.body.url}", t)
+                    Log.e(Config.logTag, "Fetcher: Invalid signed url for model $modelClass: ${detailsResponse.body.url}", t)
                     null
                 }
             is NetworkResult.Error -> {
-                Log.w(Config.logTag, "Failed to get latest details for model $modelClass: ${detailsResponse.error}")
+                Log.w(Config.logTag, "Fetcher: Failed to get latest details for model $modelClass: ${detailsResponse.error}")
                 fallbackDownloadDetails()
             }
             is NetworkResult.Exception -> {
-                Log.e(Config.logTag, "Exception retrieving latest details for model $modelClass: ${detailsResponse.responseCode}", detailsResponse.exception)
+                Log.e(Config.logTag, "Fetcher: Exception retrieving latest details for model $modelClass: ${detailsResponse.responseCode}", detailsResponse.exception)
                 fallbackDownloadDetails()
             }
         }
@@ -442,6 +517,12 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
             .storeValue(modelClass, time.toMillisecondsSinceEpoch())
     }
 
+    protected open fun clearNextUpgradeTime() {
+        StorageFactory
+            .getStorageInstance(context, PURPOSE_MODEL_UPGRADE)
+            .remove(modelClass)
+    }
+
     /**
      * Fall back to getting the download details.
      */
@@ -452,16 +533,16 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
      * Delete all files in cache that are not the recently downloaded file.
      */
     override suspend fun cleanUpPostDownload(downloadedFile: File) = withContext(Dispatchers.IO) {
-        getCacheFolder()
-            .listFiles()
-            ?.filter { it != downloadedFile && calculateHash(it, defaultModelHashAlgorithm) != defaultModelHash }
-            ?.sortedByDescending { it.lastModified() }
-            ?.filterIndexed { index, file ->
-                file.lastModified().asEpochMillisecondsClockMark()
-                    .elapsedSince() > CACHE_MODEL_TIME || index > CACHE_MODEL_MAX_COUNT
-            }
-            ?.forEach { it.delete() }
-            .let { Unit }
+        try {
+            getCacheFolder()
+                .listFiles()
+                ?.filter { it != downloadedFile && calculateHash(it, defaultModelHashAlgorithm) != defaultModelHash }
+                ?.sortedByDescending { it.lastModified() }
+                ?.filterIndexed { index, _ -> index > CACHE_MODEL_MAX_COUNT }
+                ?.forEach { it.delete() }
+        } catch (t: Throwable) {
+            Log.e(Config.logTag, "Error cleaning up post download", t)
+        }.let { }
     }
 
     /**
@@ -469,10 +550,15 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
      */
     private suspend fun getMatchingFile(hash: String, hashAlgorithm: String): File? =
         withContext(Dispatchers.IO) {
-            getCacheFolder()
-                .listFiles()
-                ?.sortedByDescending { it.lastModified() }
-                ?.firstOrNull { calculateHash(it, hashAlgorithm) == hash }
+            try {
+                getCacheFolder()
+                    .listFiles()
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.firstOrNull { calculateHash(it, hashAlgorithm) == hash }
+            } catch (t: Throwable) {
+                Log.e(Config.logTag, "Unable to get matching file", t)
+                null
+            }
         }
 
     /**
@@ -491,6 +577,7 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
             ?.second ?: files?.maxByOrNull { it.lastModified() }
     }
 
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     data class ModelVersion(
         val versioningVersion: Int,
         val frameworkVersion: Int,
@@ -551,18 +638,17 @@ abstract class UpdatingModelWebFetcher(private val context: Context) : SignedUrl
         getCacheFolder().deleteRecursively()
         getCacheFolder().mkdirs()
 
-        StorageFactory
-            .getStorageInstance(context, PURPOSE_MODEL_UPGRADE)
-            .clear()
-    }.let { Unit }
+        clearNextUpgradeTime()
+    }.let { }
 }
 
 /**
  * A [WebFetcher] that queries Bouncer servers for updated data. If a new version is found, download it. If the data
  * details match what is cached, return the cached version instead.
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 abstract class UpdatingResourceFetcher(context: Context) : UpdatingModelWebFetcher(context) {
-    protected abstract val resource: Int
+    protected abstract val assetFileName: String
     protected abstract val resourceModelVersion: String
     protected abstract val resourceModelHash: String
     protected abstract val resourceModelHashAlgorithm: String
@@ -596,32 +682,24 @@ abstract class UpdatingResourceFetcher(context: Context) : UpdatingModelWebFetch
     private fun fetchModelFromResource(): FetchedModelMeta =
         FetchedModelResourceMeta(
             modelVersion = resourceModelVersion,
-            resourceId = resource,
+            assetFileName = assetFileName,
             hash = resourceModelHash,
             hashAlgorithm = resourceModelHashAlgorithm,
         )
 }
 
 /**
- * Determine if a [File] matches the expected [hash].
- */
-private suspend fun fileMatchesHash(localFile: File, hash: String, hashAlgorithm: String) = try {
-    hash == calculateHash(localFile, hashAlgorithm)
-} catch (t: Throwable) {
-    false
-}
-
-/**
  * Download a file from a given [url] and ensure that it matches the expected [hash].
  */
-@Throws(IOException::class, FileCreationException::class, NoSuchAlgorithmException::class, HashMismatchException::class)
+@Throws(IOException::class, NoSuchAlgorithmException::class, HashMismatchException::class)
 private suspend fun downloadAndVerify(
+    context: Context,
     url: URL,
     outputFile: File,
     hash: String,
     hashAlgorithm: String
 ) {
-    downloadFile(url, outputFile)
+    downloadFile(context, url, outputFile)
     val calculatedHash = calculateHash(outputFile, hashAlgorithm)
 
     if (hash != calculatedHash) {
@@ -631,55 +709,12 @@ private suspend fun downloadAndVerify(
 }
 
 /**
- * Calculate the hash of a file using the [hashAlgorithm].
- */
-@Throws(IOException::class, NoSuchAlgorithmException::class)
-private suspend fun calculateHash(file: File, hashAlgorithm: String): String? = withContext(Dispatchers.IO) {
-    if (file.exists()) {
-        val digest = MessageDigest.getInstance(hashAlgorithm)
-        FileInputStream(file).use { digest.update(it.readBytes()) }
-        digest.digest().joinToString("") { "%02x".format(it) }
-    } else {
-        null
-    }
-}
-
-/**
  * Download a file from the provided [url] into the provided [outputFile].
  */
-@Throws(IOException::class, FileCreationException::class)
-private suspend fun downloadFile(url: URL, outputFile: File) = withContext(Dispatchers.IO) {
-    retry(
-        NetworkConfig.retryDelay,
-        excluding = listOf(FileNotFoundException::class.java)
-    ) {
-        val urlConnection = url.openConnection()
-
-        if (outputFile.exists()) {
-            outputFile.delete()
-        }
-
-        if (!outputFile.createNewFile()) {
-            throw FileCreationException(outputFile.name)
-        }
-
-        urlConnection.getInputStream().use { stream ->
-            FileOutputStream(outputFile).use { it.write(stream.readBytes()) }
-        }
+@Throws(IOException::class, FileAlreadyExistsException::class, NoSuchFileException::class)
+private suspend fun downloadFile(context: Context, url: URL, outputFile: File) = withContext(Dispatchers.IO) {
+    if (outputFile.exists()) {
+        outputFile.delete()
     }
-}
-
-/**
- * A file does not match the expected hash value.
- */
-class HashMismatchException(val algorithm: String, val expected: String, val actual: String?) :
-    Exception("Invalid hash result for algorithm '$algorithm'. Expected '$expected' but got '$actual'") {
-    override fun toString() = "HashMismatchException(algorithm='$algorithm', expected='$expected', actual='$actual')"
-}
-
-/**
- * Unable to create a file.
- */
-class FileCreationException(val fileName: String) : Exception("Unable to create local file '$fileName'") {
-    override fun toString() = "FileCreationException(fileName='$fileName')"
+    downloadFileWithRetries(context, url, outputFile)
 }

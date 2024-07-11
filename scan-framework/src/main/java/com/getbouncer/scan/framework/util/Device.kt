@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.telephony.TelephonyManager
 import java.util.Locale
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class Device(
     val ids: DeviceIds,
     val name: String,
@@ -20,7 +21,7 @@ data class Device(
     val platform: String
 ) {
     companion object {
-        private val getDeviceDetails = memoize { context: Context ->
+        private val getDeviceDetails = cacheFirstResult { context: Context ->
             Device(
                 ids = DeviceIds.fromContext(context),
                 name = getDeviceName(),
@@ -40,11 +41,12 @@ data class Device(
     }
 }
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class DeviceIds(
     val androidId: String?
 ) {
     companion object {
-        private val getDeviceIds = memoize { context: Context ->
+        private val getDeviceIds = cacheFirstResult { context: Context ->
             DeviceIds(
                 androidId = getAndroidId(context)
             )
@@ -102,16 +104,31 @@ private fun getDevicePhoneCount(context: Context) =
 private fun getNetworkOperator(context: Context) =
     (context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager?)?.networkOperator
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun getOsVersion() = Build.VERSION.SDK_INT
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun getPlatform() = "android"
 
 /**
  * from https://stackoverflow.com/a/27836910/947883
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun getDeviceName(): String {
-    val manufacturer = Build.MANUFACTURER?.toLowerCase(Locale.US) ?: ""
-    val model = Build.MODEL?.toLowerCase(Locale.US) ?: ""
+    // TODO: change this back once we can support newer kotlin versions
+//    val manufacturer = Build.MANUFACTURER?.lowercase() ?: ""
+//    val model = Build.MODEL?.lowercase() ?: ""
+    val manufacturer = Build.MANUFACTURER?.toLowerCase(Locale.ROOT) ?: ""
+    val model = Build.MODEL?.toLowerCase(Locale.ROOT) ?: ""
     return if (model.startsWith(manufacturer)) {
         model
     } else {

@@ -13,21 +13,24 @@ import com.getbouncer.scan.framework.AggregateResultListener
 import com.getbouncer.scan.framework.AnalyzerLoopErrorListener
 import com.getbouncer.scan.framework.Config
 import com.getbouncer.scan.payment.card.formatPan
-import com.getbouncer.scan.payment.ml.SSDOcr
+import com.getbouncer.scan.payment.cropCameraPreviewToSquare
+import com.getbouncer.scan.payment.cropCameraPreviewToViewFinder
 import com.getbouncer.scan.payment.ml.ssd.DetectionBox
+import com.getbouncer.scan.ui.CancellationReason
 import com.getbouncer.scan.ui.DebugDetectionBox
 import com.getbouncer.scan.ui.ScanResultListener
 import com.getbouncer.scan.ui.SimpleScanActivity
-import com.getbouncer.scan.ui.util.fadeIn
 import com.getbouncer.scan.ui.util.getColorByRes
 import com.getbouncer.scan.ui.util.setTextSizeByRes
 import com.getbouncer.scan.ui.util.setVisible
 import com.getbouncer.scan.ui.util.show
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
+@Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 interface CardScanResultListener : ScanResultListener {
 
     /**
@@ -38,17 +41,13 @@ interface CardScanResultListener : ScanResultListener {
         frames: Collection<SavedFrame>,
         isFastDevice: Boolean,
     )
-
-    /**
-     * The user requested to enter payment card details manually.
-     */
-    fun enterManually()
 }
 
-private val MINIMUM_RESOLUTION = Size(1280, 720) // minimum size of an object square
+private val MINIMUM_RESOLUTION = Size(1067, 600) // minimum size of screen detect
 
 private fun DetectionBox.forDebug() = DebugDetectionBox(rect, confidence, label.toString())
 
+@Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 abstract class CardScanBaseActivity :
     SimpleScanActivity(),
     AggregateResultListener<MainLoopAggregator.InterimResult, MainLoopAggregator.FinalResult>,
@@ -110,7 +109,7 @@ abstract class CardScanBaseActivity :
         super.setupUiConstraints()
 
         enterCardManuallyTextView.layoutParams = ConstraintLayout.LayoutParams(
-            0, // width
+            ConstraintLayout.LayoutParams.WRAP_CONTENT, // width
             ConstraintLayout.LayoutParams.WRAP_CONTENT, // height
         ).apply {
             marginStart = resources.getDimensionPixelSize(R.dimen.bouncerEnterCardManuallyMargin)
@@ -130,8 +129,8 @@ abstract class CardScanBaseActivity :
      * Cancel scanning to enter a card manually
      */
     protected open fun enterCardManually() {
-        scanStat.trackResult("enter_card_manually")
-        resultListener.enterManually()
+        runBlocking { scanStat.trackResult("enter_card_manually") }
+        resultListener.userCanceled(CancellationReason.UserCannotScan)
         closeScanner()
     }
 
@@ -139,12 +138,14 @@ abstract class CardScanBaseActivity :
      * A final result was received from the aggregator.
      */
     override suspend fun onResult(result: MainLoopAggregator.FinalResult) = launch(Dispatchers.Main) {
+        changeScanState(ScanState.Correct)
+        cameraAdapter.unbindFromLifecycle(this@CardScanBaseActivity)
         resultListener.cardScanned(
             pan = result.pan,
             frames = scanFlow.selectCompletionLoopFrames(result.averageFrameRate, result.savedFrames),
             isFastDevice = result.averageFrameRate > Config.slowDeviceFrameRate,
         )
-    }.let { Unit }
+    }.let { }
 
     /**
      * An interim result was received from the result aggregator.
@@ -157,20 +158,22 @@ abstract class CardScanBaseActivity :
             scanStat.trackResult("ocr_pan_observed")
         }
 
-        if (Config.isDebug && result.analyzerResult.ocr?.pan?.isNotEmpty() == true) {
-            cardNumberTextView.text = formatPan(result.analyzerResult.ocr.pan)
-            cardNumberTextView.show()
-        } else {
-            val mostLikelyPan = when (val state = result.state) {
-                is MainLoopState.Initial -> null
-                is MainLoopState.PanFound -> state.getMostLikelyPan()
-                is MainLoopState.PanSatisfied -> state.pan
-                is MainLoopState.CardSatisfied -> state.getMostLikelyPan()
-                is MainLoopState.Finished -> state.pan
-            }
-            if (mostLikelyPan?.isNotEmpty() == true) {
-                cardNumberTextView.text = formatPan(mostLikelyPan)
-                cardNumberTextView.fadeIn()
+        if (Config.displayScanResult) {
+            if (Config.isDebug && result.analyzerResult.ocr?.pan?.isNotEmpty() == true) {
+                cardNumberTextView.text = formatPan(result.analyzerResult.ocr.pan)
+                cardNumberTextView.show()
+            } else {
+                val mostLikelyPan = when (val state = result.state) {
+                    is MainLoopState.Initial -> null
+                    is MainLoopState.PanFound -> state.getMostLikelyPan()
+                    is MainLoopState.PanSatisfied -> state.pan
+                    is MainLoopState.CardSatisfied -> state.getMostLikelyPan()
+                    is MainLoopState.Finished -> state.pan
+                }
+                if (mostLikelyPan?.isNotEmpty() == true) {
+                    cardNumberTextView.text = formatPan(mostLikelyPan)
+                    cardNumberTextView.show()
+                }
             }
         }
 
@@ -182,16 +185,32 @@ abstract class CardScanBaseActivity :
             is MainLoopState.Finished -> changeScanState(ScanState.Correct)
         }
 
-        result.analyzerResult.ocr?.detectedBoxes?.let { detectionBoxes ->
-            if (Config.isDebug) {
-                val bitmap = withContext(Dispatchers.Default) { SSDOcr.cropImage(result.frame).image }
+        if (Config.isDebug) {
+            result.analyzerResult.ocr?.detectedBoxes?.let { detectionBoxes ->
+                val bitmap = withContext(Dispatchers.Default) {
+                    cropCameraPreviewToViewFinder(
+                        result.frame.cameraPreviewImage.image.image,
+                        result.frame.cameraPreviewImage.previewImageBounds,
+                        result.frame.cardFinder
+                    )
+                }
                 debugImageView.setImageBitmap(bitmap)
                 debugOverlayView.setBoxes(detectionBoxes.map { it.forDebug() })
+            } ?: run {
+                val bitmap = withContext(Dispatchers.Default) {
+                    cropCameraPreviewToSquare(
+                        result.frame.cameraPreviewImage.image.image,
+                        result.frame.cameraPreviewImage.previewImageBounds,
+                        result.frame.cardFinder
+                    )
+                }
+                debugImageView.setImageBitmap(bitmap)
+                debugOverlayView.clearBoxes()
             }
         }
-    }.let { Unit }
+    }.let { }
 
-    override suspend fun onReset() = launch(Dispatchers.Main) { changeScanState(ScanState.NotFound) }.let { Unit }
+    override suspend fun onReset() = launch(Dispatchers.Main) { changeScanState(ScanState.NotFound) }.let { }
 
     override fun onAnalyzerFailure(t: Throwable): Boolean {
         analyzerFailureCancelScan(t)

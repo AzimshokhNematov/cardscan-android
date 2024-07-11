@@ -1,35 +1,56 @@
 package com.getbouncer.scan.framework.time
 
 import androidx.annotation.CheckResult
-import java.util.Date
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 object Clock {
     @JvmStatic
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     fun markNow(): ClockMark = PreciseClockMark(System.nanoTime())
 }
 
 /**
  * Convert a milliseconds since epoch timestamp to a clock mark.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Long.asEpochMillisecondsClockMark(): ClockMark = AbsoluteClockMark(this)
 
 /**
  * A marked point in time.
  */
-interface ClockMark {
-    fun elapsedSince(): Duration
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+sealed class ClockMark {
+    abstract fun elapsedSince(): Duration
 
-    fun toMillisecondsSinceEpoch(): Long
+    abstract fun toMillisecondsSinceEpoch(): Long
 
-    fun hasPassed(): Boolean
+    abstract fun hasPassed(): Boolean
 
-    fun isInFuture(): Boolean
+    abstract fun isInFuture(): Boolean
+
+    abstract operator fun plus(duration: Duration): ClockMark
+
+    abstract operator fun minus(duration: Duration): ClockMark
+
+    abstract operator fun compareTo(other: ClockMark): Int
 }
 
 /**
  * A clock mark based on milliseconds since epoch. This is precise to the nearest millisecond.
  */
-private class AbsoluteClockMark(private val millisecondsSinceEpoch: Long) : ClockMark {
+private class AbsoluteClockMark(private val millisecondsSinceEpoch: Long) : ClockMark() {
     override fun elapsedSince(): Duration = (System.currentTimeMillis() - millisecondsSinceEpoch).milliseconds
 
     override fun toMillisecondsSinceEpoch(): Long = millisecondsSinceEpoch
@@ -37,6 +58,15 @@ private class AbsoluteClockMark(private val millisecondsSinceEpoch: Long) : Cloc
     override fun hasPassed(): Boolean = elapsedSince() > Duration.ZERO
 
     override fun isInFuture(): Boolean = elapsedSince() < Duration.ZERO
+
+    override fun plus(duration: Duration): ClockMark =
+        AbsoluteClockMark(millisecondsSinceEpoch + duration.inMilliseconds.toLong())
+
+    override fun minus(duration: Duration): ClockMark =
+        AbsoluteClockMark(millisecondsSinceEpoch - duration.inMilliseconds.toLong())
+
+    override fun compareTo(other: ClockMark): Int =
+        millisecondsSinceEpoch.compareTo(other.toMillisecondsSinceEpoch())
 
     override fun equals(other: Any?): Boolean =
         this === other || when (other) {
@@ -50,15 +80,15 @@ private class AbsoluteClockMark(private val millisecondsSinceEpoch: Long) : Cloc
     }
 
     override fun toString(): String {
-        return "AbsoluteClockMark(at ${Date(millisecondsSinceEpoch)})"
+        return "AbsoluteClockMark(at $millisecondsSinceEpoch ms since epoch})"
     }
 }
 
 /**
  * A precise clock mark that is not bound to epoch seconds. This is precise to the nearest nanosecond.
  */
-private class PreciseClockMark(private val originMark: Long) : ClockMark {
-    override fun elapsedSince(): Duration = (System.nanoTime() - originMark).nanoseconds
+private class PreciseClockMark(private val originMarkNanoseconds: Long) : ClockMark() {
+    override fun elapsedSince(): Duration = (System.nanoTime() - originMarkNanoseconds).nanoseconds
 
     override fun toMillisecondsSinceEpoch(): Long = System.currentTimeMillis() - elapsedSince().inMilliseconds.toLong()
 
@@ -66,15 +96,23 @@ private class PreciseClockMark(private val originMark: Long) : ClockMark {
 
     override fun isInFuture(): Boolean = elapsedSince() < Duration.ZERO
 
+    override fun plus(duration: Duration): ClockMark =
+        PreciseClockMark(originMarkNanoseconds + duration.inNanoseconds)
+
+    override fun minus(duration: Duration): ClockMark =
+        PreciseClockMark(originMarkNanoseconds + duration.inNanoseconds)
+
+    override fun compareTo(other: ClockMark): Int = elapsedSince().compareTo(other.elapsedSince())
+
     override fun equals(other: Any?): Boolean =
         this === other || when (other) {
-            is PreciseClockMark -> originMark == other.originMark
+            is PreciseClockMark -> originMarkNanoseconds == other.originMarkNanoseconds
             is ClockMark -> toMillisecondsSinceEpoch() == other.toMillisecondsSinceEpoch()
             else -> false
         }
 
     override fun hashCode(): Int {
-        return originMark.hashCode()
+        return originMarkNanoseconds.hashCode()
     }
 
     override fun toString(): String = elapsedSince().let {
@@ -92,6 +130,10 @@ private class PreciseClockMark(private val originMark: Long) : ClockMark {
  * TODO: use contracts when they are no longer experimental
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 inline fun <T> measureTime(block: () -> T): Pair<Duration, T> {
     // contract { callsInPlace(block, EXACTLY_ONCE) }
     val mark = Clock.markNow()

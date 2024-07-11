@@ -3,7 +3,6 @@ package com.getbouncer.scan.framework
 import androidx.test.filters.LargeTest
 import androidx.test.filters.SmallTest
 import androidx.test.platform.app.InstrumentationRegistry
-import com.getbouncer.scan.framework.test.R
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runBlockingTest
@@ -34,7 +33,7 @@ class FetcherTest {
     @ExperimentalCoroutinesApi
     fun fetchResource_success() = runBlockingTest {
         class ResourceFetcherImpl : ResourceFetcher() {
-            override val resource: Int = R.raw.sample_resource
+            override val assetFileName: String = "sample_resource.tflite"
             override val modelVersion: String = "sample_resource"
             override val hash: String = "0dcf3e387c68dfea8dd72a183f1f765478ebaa4d8544cfc09a16e87a795d8ccf"
             override val hashAlgorithm: String = "SHA-256"
@@ -49,9 +48,9 @@ class FetcherTest {
                 modelVersion = "sample_resource",
                 modelHash = "0dcf3e387c68dfea8dd72a183f1f765478ebaa4d8544cfc09a16e87a795d8ccf",
                 modelHashAlgorithm = "SHA-256",
-                resourceId = R.raw.sample_resource,
+                assetFileName = "sample_resource.tflite",
             ),
-            actual = ResourceFetcherImpl().fetchData(false)
+            actual = ResourceFetcherImpl().fetchData(forImmediateUse = false, isOptional = false)
         )
     }
 
@@ -71,7 +70,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
@@ -101,7 +100,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
@@ -131,31 +130,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
-        assertTrue { fetchedModel is FetchedFile }
-
-        assertNull((fetchedModel as FetchedFile).file)
-    }
-
-    @Test
-    @LargeTest
-    fun fetchModelFromWebSignedUrl_getSignedUrlFail() = runBlocking {
-        Config.apiKey = "__INTEGRATION_TEST_INVALID_KEY__"
-
-        class FetcherImpl : SignedUrlModelWebFetcher(testContext) {
-            override val modelClass = "four_recognize"
-            override val modelFrameworkVersion = 1
-            override val modelVersion = "0.0.1.16"
-            override val modelFileName = "fourrecognize.tflite"
-            override val hash = "55eea0d57239a7e92904fb15209963f7236bd06919275bdeb0a765a94b559c97"
-            override val hashAlgorithm = "SHA-256"
-        }
-
-        // force downloading the model for this test
-        val fetcher = FetcherImpl()
-        fetcher.clearCache()
-
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         assertNull((fetchedModel as FetchedFile).file)
@@ -177,7 +152,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
@@ -207,7 +182,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
@@ -237,7 +212,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(true)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = true, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
@@ -267,7 +242,7 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedFile }
 
         assertNull((fetchedModel as FetchedFile).file)
@@ -277,7 +252,7 @@ class FetcherTest {
     @LargeTest
     fun fetchUpgradableResourceModel_success() = runBlocking {
         class FetcherImpl : UpdatingResourceFetcher(testContext) {
-            override val resource = R.raw.sample_resource
+            override val assetFileName: String = "sample_resource.tflite"
             override val resourceModelVersion = "demo"
             override val resourceModelHash = "0dcf3e387c68dfea8dd72a183f1f765478ebaa4d8544cfc09a16e87a795d8ccf"
             override val resourceModelHashAlgorithm = "SHA-256"
@@ -289,8 +264,8 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
-        assertTrue { fetchedModel is FetchedFile }
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
+        assertTrue("fetchedModel is $fetchedModel") { fetchedModel is FetchedFile }
 
         val file = (fetchedModel as FetchedFile).file
         assertNotNull(file)
@@ -307,7 +282,7 @@ class FetcherTest {
     @LargeTest
     fun fetchUpgradableResourceModel_successForImmediateUse() = runBlocking {
         class FetcherImpl : UpdatingResourceFetcher(testContext) {
-            override val resource = R.raw.sample_resource
+            override val assetFileName: String = "sample_resource.tflite"
             override val resourceModelVersion = "demo"
             override val resourceModelHash = "0dcf3e387c68dfea8dd72a183f1f765478ebaa4d8544cfc09a16e87a795d8ccf"
             override val resourceModelHashAlgorithm = "SHA-256"
@@ -319,17 +294,17 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(true)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = true, isOptional = false)
         assertTrue { fetchedModel is FetchedResource }
 
-        assertEquals(R.raw.sample_resource, (fetchedModel as FetchedResource).resourceId)
+        assertEquals("sample_resource.tflite", (fetchedModel as FetchedResource).assetFileName)
     }
 
     @Test
     @LargeTest
     fun fetchUpgradableResourceModel_downloadFail() = runBlocking {
         class FetcherImpl : UpdatingResourceFetcher(testContext) {
-            override val resource = R.raw.sample_resource
+            override val assetFileName: String = "sample_resource.tflite"
             override val resourceModelVersion = "demo"
             override val resourceModelHash = "0dcf3e387c68dfea8dd72a183f1f765478ebaa4d8544cfc09a16e87a795d8ccf"
             override val resourceModelHashAlgorithm = "SHA-256"
@@ -341,9 +316,9 @@ class FetcherTest {
         val fetcher = FetcherImpl()
         fetcher.clearCache()
 
-        val fetchedModel = fetcher.fetchData(false)
+        val fetchedModel = fetcher.fetchData(forImmediateUse = false, isOptional = false)
         assertTrue { fetchedModel is FetchedResource }
 
-        assertEquals(R.raw.sample_resource, (fetchedModel as FetchedResource).resourceId)
+        assertEquals("sample_resource.tflite", (fetchedModel as FetchedResource).assetFileName)
     }
 }

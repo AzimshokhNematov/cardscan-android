@@ -7,16 +7,13 @@ on:
     branches: [ master ]
 
 jobs:
-  test:
+  instrumentation-test:
 
     runs-on: macOS-latest
 
     steps:
       - name: checkout
         uses: actions/checkout@v2
-        with:
-          token: ${{secrets.SERVICE_PERSONAL_ACCESS_TOKEN}}
-          submodules: recursive
 
       - name: test
         uses: reactivecircus/android-emulator-runner@v2

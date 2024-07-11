@@ -3,6 +3,8 @@ package com.getbouncer.scan.framework.util
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Size
+import android.util.SizeF
+import android.view.View
 import androidx.annotation.CheckResult
 import kotlin.math.max
 import kotlin.math.min
@@ -23,6 +25,7 @@ import kotlin.math.roundToInt
  * ```
  */
 @CheckResult
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 fun maxAspectRatioInSize(area: Size, aspectRatio: Float): Size {
     var width = area.width
     var height = (width / aspectRatio).roundToInt()
@@ -51,6 +54,7 @@ fun maxAspectRatioInSize(area: Size, aspectRatio: Float): Size {
  * ```
  */
 @CheckResult
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 fun minAspectRatioSurroundingSize(area: Size, aspectRatio: Float): Size {
     var width = area.width
     var height = (width / aspectRatio).roundToInt()
@@ -71,6 +75,10 @@ fun minAspectRatioSurroundingSize(area: Size, aspectRatio: Float): Size {
  * to match.
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun adjustSizeToAspectRatio(area: Size, aspectRatio: Float): Size = if (aspectRatio < 1) {
     Size(area.width, (area.width / aspectRatio).roundToInt())
 } else {
@@ -94,6 +102,7 @@ fun adjustSizeToAspectRatio(area: Size, aspectRatio: Float): Size = if (aspectRa
  * resolutions.
  */
 @CheckResult
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 fun Size.scaleAndCenterWithin(containingSize: Size): Rect {
     val aspectRatio = width.toFloat() / height
 
@@ -109,6 +118,14 @@ fun Size.scaleAndCenterWithin(containingSize: Size): Rect {
         top + scaledSize.height,
     )
 }
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.scaleAndCenterWithin(containingRect: Rect): Rect =
+    this.scaleAndCenterWithin(containingRect.size()).move(containingRect.left, containingRect.top)
 
 /**
  * Calculate the position of the [Size] surrounding the [surroundedSize]. This makes a few
@@ -128,6 +145,7 @@ fun Size.scaleAndCenterWithin(containingSize: Size): Rect {
  * resolutions.
  */
 @CheckResult
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 fun Size.scaleAndCenterSurrounding(surroundedSize: Size): Rect {
     val aspectRatio = width.toFloat() / height
 
@@ -143,9 +161,70 @@ fun Size.scaleAndCenterSurrounding(surroundedSize: Size): Rect {
 }
 
 /**
+ * Scale a size based on percentage scale values, and keep track of its position.
+ */
+@CheckResult
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+fun Size.scaleCentered(x: Float, y: Float): Rect {
+    val newSize = this.scale(x, y)
+    val left = (this.width - newSize.width) / 2
+    val top = (this.height - newSize.height) / 2
+    return Rect(
+        left,
+        top,
+        left + newSize.width,
+        top + newSize.height,
+    )
+}
+
+/**
+ * Calculate the new size based on percentage scale values.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun SizeF.scale(x: Float, y: Float) = SizeF(this.width * x, this.height * y)
+
+/**
+ * Calculate the new size based on a percentage scale.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun SizeF.scale(scale: Float) = this.scale(scale, scale)
+
+/**
+ * Calculate the new size based on percentage scale values.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.scale(x: Float, y: Float): Size = Size((this.width * x).roundToInt(), (this.height * y).roundToInt())
+
+/**
+ * Calculate the new size based on a percentage scale.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.scale(scale: Float) = this.scale(scale, scale)
+
+/**
  * Center a size on a given rectangle. The size may be larger or smaller than the rect.
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Size.centerOn(rect: Rect) = Rect(
     /* left */
     rect.centerX() - this.width / 2,
@@ -164,6 +243,10 @@ fun Size.centerOn(rect: Rect) = Rect(
  * For example, scaling a Rect(1, 2, 3, 4) by Size(5, 6) will result in a Rect(5, 12, 15, 24)
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun RectF.scaled(scaledSize: Size) = RectF(
     this.left * scaledSize.width,
     this.top * scaledSize.height,
@@ -178,6 +261,10 @@ fun RectF.scaled(scaledSize: Size) = RectF(
  * For example, scaling a Rect(5, 6, 7, 8) by Size(2, 0.5) will result
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun RectF.centerScaled(scaleX: Float, scaleY: Float) = RectF(
     this.centerX() - this.width() * scaleX / 2,
     this.centerY() - this.height() * scaleY / 2,
@@ -186,6 +273,10 @@ fun RectF.centerScaled(scaleX: Float, scaleY: Float) = RectF(
 )
 
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Rect.centerScaled(scaleX: Float, scaleY: Float) = Rect(
     this.centerX() - (this.width() * scaleX / 2).toInt(),
     this.centerY() - (this.height() * scaleY / 2).toInt(),
@@ -197,18 +288,40 @@ fun Rect.centerScaled(scaleX: Float, scaleY: Float) = Rect(
  * Converts a size to rectangle with the top left corner at 0,0
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Size.toRect() = Rect(0, 0, this.width, this.height)
 
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Size.toRectF() = RectF(0F, 0F, this.width.toFloat(), this.height.toFloat())
+
+/**
+ * Transpose a size's width and height.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.transpose() = Size(this.height, this.width)
 
 /**
  * Return a rect that is the intersection of two other rects
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Rect.intersectionWith(rect: Rect): Rect {
     require(this.intersect(rect)) {
-        "Given rects do not intersect"
+        "Given rects do not intersect $this <> $rect"
     }
 
     return Rect(
@@ -223,30 +336,159 @@ fun Rect.intersectionWith(rect: Rect): Rect {
  * Move relative to its current position
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Rect.move(relativeX: Int, relativeY: Int) = Rect(
     this.left + relativeX,
     this.top + relativeY,
     this.right + relativeX,
-    this.bottom + relativeY
+    this.bottom + relativeY,
 )
+
+/**
+ * Move relative to its current position
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun RectF.move(relativeX: Float, relativeY: Float) = RectF(
+    this.left + relativeX,
+    this.top + relativeY,
+    this.right + relativeX,
+    this.bottom + relativeY,
+)
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.toSizeF() = SizeF(width.toFloat(), height.toFloat())
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun SizeF.toSize() = Size(width.roundToInt(), height.roundToInt())
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Rect.toRectF() = RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun RectF.toRect() = Rect(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
 
 /**
  * Takes a relation between a region of interest and a size and projects the region of interest
  * to that new location
  */
 @CheckResult
-fun Size.projectRegionOfInterest(toSize: Size, regionOfInterest: Rect): Rect {
-    require(this.width > 0 || this.height > 0) {
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun SizeF.projectRegionOfInterest(toSize: SizeF, regionOfInterest: RectF): RectF {
+    require(this.width > 0 && this.height > 0) {
         "Cannot project from container with non-positive dimensions"
     }
 
-    return Rect(
+    return RectF(
         regionOfInterest.left * toSize.width / this.width,
         regionOfInterest.top * toSize.height / this.height,
         regionOfInterest.right * toSize.width / this.width,
-        regionOfInterest.bottom * toSize.height / this.height
+        regionOfInterest.bottom * toSize.height / this.height,
     )
 }
+
+/**
+ * Takes a relation between a region of interest and a size and projects the region of interest
+ * to that new location
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Size.projectRegionOfInterest(toSize: Size, regionOfInterest: Rect) =
+    this.toSizeF().projectRegionOfInterest(toSize.toSizeF(), regionOfInterest.toRectF()).toRect()
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun RectF.projectRegionOfInterest(toSize: SizeF, regionOfInterest: RectF) =
+    this.size().projectRegionOfInterest(toSize, regionOfInterest.move(-this.left, -this.top))
+
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Rect.projectRegionOfInterest(toSize: Size, regionOfInterest: Rect) =
+    this.size().projectRegionOfInterest(toSize, regionOfInterest.move(-this.left, -this.top))
+
+/**
+ * Project a region of interest from one [Rect] to another. For example, given the rect and region of interest:
+ *  _______
+ * |       |
+ * |    _  |
+ * |   |_| |
+ * |       |
+ * |_______|
+ *
+ * When projected to the following region:
+ *  ___________
+ * |           |
+ * |           |
+ * |___________|
+ *
+ * The position and size of the region of interest are scaled to the new rect.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun RectF.projectRegionOfInterest(toRect: RectF, regionOfInterest: RectF) =
+    this.projectRegionOfInterest(toRect.size(), regionOfInterest).move(toRect.left, toRect.top)
+
+/**
+ * Project a region of interest from one [Rect] to another. For example, given the rect and region of interest:
+ *  _______
+ * |       |
+ * |    _  |
+ * |   |_| |
+ * |       |
+ * |_______|
+ *
+ * When projected to the following region:
+ *  ___________
+ * |           |
+ * |           |
+ * |___________|
+ *
+ * The position and size of the region of interest are scaled to the new rect.
+ */
+@CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun Rect.projectRegionOfInterest(toRect: Rect, regionOfInterest: Rect) =
+    this.projectRegionOfInterest(toRect.size(), regionOfInterest).move(toRect.left, toRect.top)
 
 /**
  * This method allows relocating and resizing a portion of a [Size]. It returns the required
@@ -284,6 +526,10 @@ fun Size.projectRegionOfInterest(toSize: Size, regionOfInterest: Rect): Rect {
  * |_|___|__|
  */
 @CheckResult
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Size.resizeRegion(
     originalRegion: Rect,
     newRegion: Rect,
@@ -393,9 +639,44 @@ fun Size.resizeRegion(
 /**
  * Determine the size of a [Rect].
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Rect.size() = Size(width(), height())
 
 /**
- * Determine the aspect ratio of a size.
+ * Determine the size of a [RectF].
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun RectF.size() = SizeF(width(), height())
+
+/**
+ * Determine the aspect ratio of a [Size].
+ */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Size.aspectRatio() = width.toFloat() / height.toFloat()
+
+/**
+ * Determine the aspect ratio of a [SizeF].
+ */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun SizeF.aspectRatio() = width / height
+
+/**
+ * Determine the size of a [View].
+ */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+fun View.size() = Size(width, height)

@@ -15,10 +15,13 @@ import com.getbouncer.scan.framework.util.getOsVersion
 import com.getbouncer.scan.framework.util.getPlatform
 import com.getbouncer.scan.framework.util.getSdkFlavor
 import com.getbouncer.scan.framework.util.getSdkVersion
-import com.getbouncer.scan.framework.util.memoize
 import com.getbouncer.scan.framework.util.retry
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.io.OutputStreamWriter
@@ -48,6 +51,10 @@ private val networkTimer by lazy { Timer.newInstance(Config.logTag, "network") }
 /**
  * Send a post request to a bouncer endpoint.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 suspend fun <Request, Response, Error> postForResult(
     context: Context,
     path: String,
@@ -69,6 +76,10 @@ suspend fun <Request, Response, Error> postForResult(
 /**
  * Send a post request to a bouncer endpoint and ignore the response.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 suspend fun <Request> postData(
     context: Context,
     path: String,
@@ -85,6 +96,10 @@ suspend fun <Request> postData(
 /**
  * Send a get request to a bouncer endpoint and parse the response.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 suspend fun <Response, Error> getForResult(
     context: Context,
     path: String,
@@ -248,7 +263,7 @@ private fun get(context: Context, path: String): NetworkResult<out String, out S
         with(url.openConnection() as HttpURLConnection) {
             requestMethod = REQUEST_METHOD_GET
 
-            // Set the connection to both send and receive data
+            // Set the connection to only receive data
             doOutput = false
             doInput = true
 
@@ -273,6 +288,45 @@ private fun get(context: Context, path: String): NetworkResult<out String, out S
     } catch (t: Throwable) {
         Log.w(Config.logTag, "Failed network request to endpoint $url", t)
         NetworkResult.Exception(responseCode, t)
+    }
+}
+
+@Throws(IOException::class)
+suspend fun downloadFileWithRetries(context: Context, url: URL, outputFile: File) = retry(
+    NetworkConfig.retryDelay,
+    excluding = listOf(FileNotFoundException::class.java)
+) {
+    downloadFile(context, url, outputFile)
+}
+
+/**
+ * Download a file.
+ */
+@Throws(IOException::class)
+private fun downloadFile(context: Context, url: URL, outputFile: File) = networkTimer.measure(url.toString()) {
+    try {
+        with(url.openConnection() as HttpURLConnection) {
+            requestMethod = REQUEST_METHOD_GET
+
+            // Set the connection to only receive data
+            doOutput = false
+            doInput = true
+
+            // set headers
+            setRequestHeaders(context)
+
+            // Read the response code. This will block until the response has been received.
+            val responseCode = this.responseCode
+
+            inputStream.use { stream ->
+                FileOutputStream(outputFile).use { stream.copyTo(it) }
+            }
+
+            responseCode
+        }
+    } catch (t: Throwable) {
+        Log.w(Config.logTag, "Failed network request to endpoint $url", t)
+        throw t
     }
 }
 
@@ -303,7 +357,7 @@ private data class DeviceIdStructure(
     val d: String
 )
 
-private val buildDeviceId = memoize { context: Context ->
+private val buildDeviceId = cacheFirstResult { context: Context ->
     DeviceIds.fromContext(context).run {
         Base64.encodeToString(
             Config.json.encodeToString(
@@ -351,4 +405,7 @@ private fun getBaseUrl() = if (NetworkConfig.baseUrl.endsWith("/")) {
     NetworkConfig.baseUrl
 }
 
+/**
+ * An exception that should never be thrown, but is required for typing.
+ */
 private class RetryNetworkRequestException(val result: NetworkResult<out String, out String>) : Exception()

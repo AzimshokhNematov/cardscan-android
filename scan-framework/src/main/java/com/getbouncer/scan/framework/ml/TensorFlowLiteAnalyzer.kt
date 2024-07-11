@@ -11,15 +11,21 @@ import com.getbouncer.scan.framework.time.Timer
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.Closeable
 import java.nio.ByteBuffer
 
 /**
  * A TensorFlowLite analyzer uses an [Interpreter] to analyze data.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 abstract class TensorFlowLiteAnalyzer<Input, MLInput, Output, MLOutput>(
     private val tfInterpreter: Interpreter,
-) : Analyzer<Input, Unit, Output>, Closeable {
+    private val delegate: NnApiDelegate? = null,
+) : Analyzer<Input, Any, Output>, Closeable {
 
     protected abstract suspend fun interpretMLOutput(data: Input, mlOutput: MLOutput): Output
 
@@ -31,7 +37,7 @@ abstract class TensorFlowLiteAnalyzer<Input, MLInput, Output, MLOutput>(
         Timer.newInstance(Config.logTag, this::class.java.simpleName)
     }
 
-    override suspend fun analyze(data: Input, state: Unit): Output {
+    override suspend fun analyze(data: Input, state: Any): Output {
         val mlInput = loggingTimer.measureSuspend("transform") {
             transformData(data)
         }
@@ -45,16 +51,23 @@ abstract class TensorFlowLiteAnalyzer<Input, MLInput, Output, MLOutput>(
         }
     }
 
-    override fun close() = tfInterpreter.close()
+    override fun close() {
+        tfInterpreter.close()
+        delegate?.close()
+    }
 }
 
 /**
  * A factory that creates tensorflow models as analyzers.
  */
-abstract class TFLAnalyzerFactory<Input, State, Output, AnalyzerType : Analyzer<Input, State, Output>>(
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+abstract class TFLAnalyzerFactory<Input, Output, AnalyzerType : Analyzer<Input, Any, Output>>(
     private val context: Context,
     private val fetchedModel: FetchedData,
-) : AnalyzerFactory<Input, State, Output, AnalyzerType> {
+) : AnalyzerFactory<Input, Any, Output, AnalyzerType> {
     protected abstract val tfOptions: Interpreter.Options
 
     private val loader by lazy { Loader(context) }

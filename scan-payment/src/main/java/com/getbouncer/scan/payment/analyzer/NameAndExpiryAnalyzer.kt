@@ -1,23 +1,23 @@
 package com.getbouncer.scan.payment.analyzer
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
 import com.getbouncer.scan.framework.Analyzer
 import com.getbouncer.scan.framework.AnalyzerFactory
 import com.getbouncer.scan.framework.Config
 import com.getbouncer.scan.framework.TrackedImage
+import com.getbouncer.scan.framework.image.size
 import com.getbouncer.scan.framework.ml.hardNonMaximumSuppression
 import com.getbouncer.scan.framework.ml.ssd.rectForm
 import com.getbouncer.scan.framework.util.centerScaled
 import com.getbouncer.scan.framework.util.scaled
+import com.getbouncer.scan.payment.cropCameraPreviewToSquare
 import com.getbouncer.scan.payment.ml.AlphabetDetect
 import com.getbouncer.scan.payment.ml.ExpiryDetect
-import com.getbouncer.scan.payment.ml.SSDOcr
 import com.getbouncer.scan.payment.ml.TextDetect
 import com.getbouncer.scan.payment.ml.ssd.DetectionBox
-import com.getbouncer.scan.payment.ml.ssd.cropImageForObjectDetect
-import com.getbouncer.scan.payment.size
 import kotlin.math.max
 import kotlin.math.min
 
@@ -33,49 +33,67 @@ private const val NAME_BOX_Y_SCALE_RATIO = 1.4F
 private const val EXPIRY_BOX_X_SCALE_RATIO = 1.1F
 private const val EXPIRY_BOX_Y_SCALE_RATIO = 1.2F
 
-class NameAndExpiryAnalyzer<State> private constructor(
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
+class NameAndExpiryAnalyzer private constructor(
     private val textDetect: TextDetect?,
     private val alphabetDetect: AlphabetDetect?,
     private val expiryDetect: ExpiryDetect?,
     val runNameExtraction: Boolean,
     val runExpiryExtraction: Boolean,
-) : Analyzer<SSDOcr.Input, State, NameAndExpiryAnalyzer.Prediction> {
+) : Analyzer<NameAndExpiryAnalyzer.Input, Any, NameAndExpiryAnalyzer.Prediction> {
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    data class Input(
+        val cameraPreviewImage: TrackedImage<Bitmap>,
+        val previewBounds: Rect,
+        val cardFinder: Rect,
+    )
+
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Prediction(
         val name: String?,
         val boxes: List<DetectionBox>?,
         val expiry: ExpiryDetect.Expiry?
     )
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     fun isExpiryDetectorAvailable() = textDetect != null && expiryDetect != null
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     fun isNameDetectorAvailable() = textDetect != null && alphabetDetect != null
 
     override suspend fun analyze(
-        data: SSDOcr.Input,
-        state: State
+        data: Input,
+        state: Any
     ) = if ((!runNameExtraction && !runExpiryExtraction) || textDetect == null) {
         Prediction(null, null, null)
     } else {
-        val objDetectBitmap = TrackedImage(
-            image = cropImageForObjectDetect(
-                data.fullImage.image,
-                data.previewSize,
-                data.cardFinder,
-            ),
-            tracker = data.fullImage.tracker,
-        )
-
         val textDetectorPrediction = textDetect.analyze(
-            TextDetect.Input(
-                data.fullImage,
-                data.previewSize,
-                data.cardFinder
-            ),
-            Unit
+            TextDetect.cameraPreviewToInput(data.cameraPreviewImage, data.previewBounds, data.cardFinder),
+            Unit,
         )
 
-        data.fullImage.tracker.trackResult("name_and_expiry_image_cropped")
+        val squareImage = TrackedImage(
+            cropCameraPreviewToSquare(data.cameraPreviewImage.image, data.previewBounds, data.cardFinder),
+            data.cameraPreviewImage.tracker,
+        )
+
+        data.cameraPreviewImage.tracker.trackResult("name_and_expiry_image_cropped")
 
         val expiry = if (runExpiryExtraction && textDetectorPrediction.expiryBoxes.isNotEmpty()) {
             // pick the expiry box by oldest date
@@ -83,14 +101,16 @@ class NameAndExpiryAnalyzer<State> private constructor(
             // direction. Scale it out a bit
             textDetectorPrediction.expiryBoxes.mapNotNull { box ->
                 expiryDetect?.analyze(
-                    ExpiryDetect.Input(
-                        objDetectBitmap,
+                    ExpiryDetect.cameraPreviewToInput(
+                        data.cameraPreviewImage,
+                        data.previewBounds,
+                        data.cardFinder,
                         // the boxes produced by textDetector are sometimes too tight, especially in the Y
                         // direction. Scale it out a bit
                         box.rect.centerScaled(
                             EXPIRY_BOX_X_SCALE_RATIO,
                             EXPIRY_BOX_Y_SCALE_RATIO
-                        )
+                        ),
                     ),
                     Unit
                 )?.expiry
@@ -108,7 +128,7 @@ class NameAndExpiryAnalyzer<State> private constructor(
                         NAME_BOX_X_SCALE_RATIO,
                         NAME_BOX_Y_SCALE_RATIO,
                     ),
-                    objDetectBitmap,
+                    squareImage,
                 )?.filter { it != ' ' }
             }.joinToString(" ").trim().ifEmpty { null }
         } else {
@@ -129,13 +149,13 @@ class NameAndExpiryAnalyzer<State> private constructor(
 
     private suspend fun processNamePredictions(
         nameRect: RectF,
-        bitmapForObjectDetection: TrackedImage
+        squareImage: TrackedImage<Bitmap>
     ): String? {
         if (alphabetDetect == null) {
             return null
         }
 
-        val scaledNameRect = nameRect.scaled(bitmapForObjectDetection.image.size())
+        val scaledNameRect = nameRect.scaled(squareImage.image.size())
         val x = scaledNameRect.left.toInt()
         val y = scaledNameRect.top.toInt()
         val width = scaledNameRect.width().toInt()
@@ -147,14 +167,14 @@ class NameAndExpiryAnalyzer<State> private constructor(
 
         // We adjust the start and end of the name bounding box to better capture the first char
         val xStart = max(0, x - charWidth / 4)
-        val nameWidth = min(bitmapForObjectDetection.image.width - xStart, width + charWidth / 2)
+        val nameWidth = min(squareImage.image.width - xStart, width + charWidth / 2)
 
-        if (y < 0 || height < 0 || y + height > bitmapForObjectDetection.image.height || xStart + nameWidth > bitmapForObjectDetection.image.width) {
+        if (y < 0 || height < 0 || y + height > squareImage.image.height || xStart + nameWidth > squareImage.image.width) {
             Log.w(Config.logTag, "Invalid name dimensions. height=$height, y=$y")
             return null
         }
 
-        val nameBitmap = Bitmap.createBitmap(bitmapForObjectDetection.image, xStart, y, nameWidth, height)
+        val nameBitmap = Bitmap.createBitmap(squareImage.image, xStart, y, nameWidth, height)
         val predictions: MutableList<CharPredictionWithBox> = ArrayList()
 
         // iterate through each stride, making a prediction per stride
@@ -162,7 +182,7 @@ class NameAndExpiryAnalyzer<State> private constructor(
         while (nameX < nameWidth - charWidth) {
             val firstLetterBitmap = TrackedImage(
                 image = Bitmap.createBitmap(nameBitmap, nameX, 0, height, height),
-                tracker = bitmapForObjectDetection.tracker,
+                tracker = squareImage.tracker,
             )
             predictions.add(
                 CharPredictionWithBox(
@@ -175,8 +195,8 @@ class NameAndExpiryAnalyzer<State> private constructor(
 
         val (boxes, probabilities) = predictions.map {
             it.getNormalizedRectForm(
-                width = bitmapForObjectDetection.image.width,
-                height = bitmapForObjectDetection.image.height
+                width = squareImage.image.width,
+                height = squareImage.image.height,
             ) to it.characterPrediction.confidence
         }.unzip()
 
@@ -202,7 +222,9 @@ class NameAndExpiryAnalyzer<State> private constructor(
         var currentLetterMaxConfidence = 0f
         var lastSeenLetter = 0.toChar()
 
-        charClusters.forEach { characterPrediction ->
+        // This should be using charClusters.forEach, but doing so seems to require API 24. It's unclear why this won't
+        // use the kotlin.collections version of `forEach`, but it's not during compile.
+        for (characterPrediction in charClusters) {
             if (lastSeenLetter == characterPrediction.character) {
                 currentConsecutiveCount += 1
                 currentLetterMaxConfidence = max(currentLetterMaxConfidence, characterPrediction.confidence)
@@ -306,14 +328,18 @@ class NameAndExpiryAnalyzer<State> private constructor(
         return word.toString().trim { it <= ' ' }
     }
 
-    class Factory<State>(
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    class Factory(
         private val textDetectFactory: TextDetect.Factory,
         private val alphabetDetectFactory: AlphabetDetect.Factory? = null,
         private val expiryDetectFactory: ExpiryDetect.Factory? = null,
         private val runNameExtraction: Boolean,
         private val runExpiryExtraction: Boolean,
-    ) : AnalyzerFactory<SSDOcr.Input, State, Prediction, NameAndExpiryAnalyzer<State>> {
-        override suspend fun newInstance() = NameAndExpiryAnalyzer<State>(
+    ) : AnalyzerFactory<Input, Any, Prediction, NameAndExpiryAnalyzer> {
+        override suspend fun newInstance() = NameAndExpiryAnalyzer(
             textDetect = textDetectFactory.newInstance(),
             alphabetDetect = alphabetDetectFactory?.newInstance(),
             expiryDetect = expiryDetectFactory?.newInstance(),

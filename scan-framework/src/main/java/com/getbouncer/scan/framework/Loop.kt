@@ -21,22 +21,27 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 object NoAnalyzersAvailableException : Exception()
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 object AlreadySubscribedException : Exception()
 
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 interface AnalyzerLoopErrorListener {
 
     /**
      * A failure occurred during frame analysis. If this returns true, the loop will terminate. If this returns false,
      * the loop will continue to execute on new data.
      */
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     fun onAnalyzerFailure(t: Throwable): Boolean
 
     /**
      * A failure occurred while collecting the result of frame analysis. If this returns true, the loop will terminate.
      * If this returns false, the loop will continue to execute on new data.
      */
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     fun onResultFailure(t: Throwable): Boolean
 }
 
@@ -53,8 +58,9 @@ interface AnalyzerLoopErrorListener {
  * @param analyzerPool: A pool of analyzers to use in this loop.
  * @param analyzerLoopErrorListener: An error handler for this loop
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 sealed class AnalyzerLoop<DataFrame, State, Output>(
-    private val analyzerPool: AnalyzerPool<DataFrame, State, Output>,
+    private val analyzerPool: AnalyzerPool<DataFrame, in State, Output>,
     private val analyzerLoopErrorListener: AnalyzerLoopErrorListener,
 ) : ResultHandler<DataFrame, Output, Boolean> {
     private val started = AtomicBoolean(false)
@@ -78,15 +84,17 @@ sealed class AnalyzerLoop<DataFrame, State, Output>(
         loopExecutionStatTracker = Stats.trackTask("${this::class.java.simpleName}_execution")
 
         if (analyzerPool.analyzers.isEmpty()) {
-            loopExecutionStatTracker.trackResult("canceled")
+            processingCoroutineScope.launch { loopExecutionStatTracker.trackResult("canceled") }
             analyzerLoopErrorListener.onAnalyzerFailure(NoAnalyzersAvailableException)
             return null
         }
 
         workerJob = processingCoroutineScope.launch {
-            analyzerPool.analyzers.forEach { analyzer ->
+            // This should be using analyzerPool.analyzers.forEach, but doing so seems to require API 24. It's unclear
+            // why this won't use the kotlin.collections version of `forEach`, but it's not during compile.
+            for (it in analyzerPool.analyzers) {
                 launch(Dispatchers.Default) {
-                    startWorker(flow, analyzer)
+                    startWorker(flow, it)
                 }
             }
         }
@@ -106,7 +114,7 @@ sealed class AnalyzerLoop<DataFrame, State, Output>(
      */
     private suspend fun startWorker(
         flow: Flow<DataFrame>,
-        analyzer: Analyzer<DataFrame, State, Output>,
+        analyzer: Analyzer<DataFrame, in State, Output>,
     ) {
         flow.collect { frame ->
             val stat = Stats.trackRepeatingTask("analyzer_execution:${analyzer::class.java.simpleName}")
@@ -141,6 +149,7 @@ sealed class AnalyzerLoop<DataFrame, State, Output>(
         if (withContext(Dispatchers.Main) { analyzerLoopErrorListener.onResultFailure(t) }) { unsubscribeFromFlow() }
     }
 
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     abstract fun getState(): State
 }
 
@@ -156,12 +165,12 @@ sealed class AnalyzerLoop<DataFrame, State, Output>(
  *
  * @param analyzerPool: A pool of analyzers to use in this loop.
  * @param resultHandler: A result handler that will be called with the results from the analyzers in this loop.
- * @param name: The name of this loop for stat and event tracking.
  * @param analyzerLoopErrorListener: An error handler for this loop
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 class ProcessBoundAnalyzerLoop<DataFrame, State, Output>(
-    private val analyzerPool: AnalyzerPool<DataFrame, State, Output>,
-    private val resultHandler: StatefulResultHandler<DataFrame, State, Output, Boolean>,
+    private val analyzerPool: AnalyzerPool<DataFrame, in State, Output>,
+    private val resultHandler: StatefulResultHandler<DataFrame, out State, Output, Boolean>,
     analyzerLoopErrorListener: AnalyzerLoopErrorListener
 ) : AnalyzerLoop<DataFrame, State, Output>(
     analyzerPool,
@@ -189,14 +198,14 @@ class ProcessBoundAnalyzerLoop<DataFrame, State, Output>(
  *
  * @param analyzerPool: A pool of analyzers to use in this loop.
  * @param resultHandler: A result handler that will be called with the results from the analyzers in this loop.
- * @param name: The name of this loop for stat and event tracking.
  * @param analyzerLoopErrorListener: An error handler for this loop
  * @param timeLimit: If specified, this is the maximum allowed time for the loop to run. If the loop
  *     exceeds this duration, the loop will terminate
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 class FiniteAnalyzerLoop<DataFrame, State, Output>(
-    private val analyzerPool: AnalyzerPool<DataFrame, State, Output>,
-    private val resultHandler: TerminatingResultHandler<DataFrame, State, Output>,
+    private val analyzerPool: AnalyzerPool<DataFrame, in State, Output>,
+    private val resultHandler: TerminatingResultHandler<DataFrame, out State, Output>,
     analyzerLoopErrorListener: AnalyzerLoopErrorListener,
     private val timeLimit: Duration = Duration.INFINITE
 ) : AnalyzerLoop<DataFrame, State, Output>(
@@ -208,6 +217,9 @@ class FiniteAnalyzerLoop<DataFrame, State, Output>(
 
     fun process(frames: Collection<DataFrame>, processingCoroutineScope: CoroutineScope): Job? {
         val channel = Channel<DataFrame>(capacity = frames.size)
+        // TODO: upgrade this when kotlin libs hit 1.5.0
+//        framesToProcess = frames.map { channel.trySend(it) }.count { it.isSuccess }
+        @Suppress("DEPRECATION")
         framesToProcess = frames.map { channel.offer(it) }.count { it }
         return if (framesToProcess > 0) {
             subscribeToFlow(channel.receiveAsFlow(), processingCoroutineScope)
@@ -216,6 +228,8 @@ class FiniteAnalyzerLoop<DataFrame, State, Output>(
         }
     }
 
+    fun cancel() = runBlocking { unsubscribeFromFlow() }
+
     override suspend fun onResult(result: Output, data: DataFrame): Boolean {
         val framesProcessed = this.framesProcessed.incrementAndGet()
         val timeElapsed = startedAt?.elapsedSince() ?: Duration.ZERO
@@ -223,8 +237,10 @@ class FiniteAnalyzerLoop<DataFrame, State, Output>(
 
         if (framesProcessed >= framesToProcess) {
             resultHandler.onAllDataProcessed()
+            unsubscribeFromFlow()
         } else if (timeElapsed > timeLimit) {
             resultHandler.onTerminatedEarly()
+            unsubscribeFromFlow()
         }
 
         val allFramesProcessed = framesProcessed >= framesToProcess
@@ -256,5 +272,9 @@ class FiniteAnalyzerLoop<DataFrame, State, Output>(
  * @return a flow that only emits elements when the downstream [Flow.collect] is waiting for the next element
  */
 @ExperimentalCoroutinesApi
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 suspend fun <T> Flow<T>.backPressureDrop(): Flow<T> =
+    // TODO: upgrade this when kotlin libs hit 1.5.0
+//    channelFlow { this@backPressureDrop.collect { trySend(it) } }.buffer(capacity = Channel.RENDEZVOUS)
+    @Suppress("DEPRECATION")
     channelFlow { this@backPressureDrop.collect { offer(it) } }.buffer(capacity = Channel.RENDEZVOUS)

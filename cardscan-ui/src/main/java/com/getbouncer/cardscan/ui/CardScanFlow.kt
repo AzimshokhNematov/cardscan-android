@@ -1,9 +1,10 @@
 package com.getbouncer.cardscan.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Log
-import android.util.Size
+import androidx.annotation.RestrictTo
 import androidx.lifecycle.LifecycleOwner
 import com.getbouncer.cardscan.ui.analyzer.CompletionLoopAnalyzer
 import com.getbouncer.cardscan.ui.analyzer.MainLoopAnalyzer
@@ -12,39 +13,49 @@ import com.getbouncer.cardscan.ui.result.CompletionLoopListener
 import com.getbouncer.cardscan.ui.result.CompletionLoopResult
 import com.getbouncer.cardscan.ui.result.MainLoopAggregator
 import com.getbouncer.cardscan.ui.result.MainLoopState
+import com.getbouncer.scan.camera.CameraAdapter
+import com.getbouncer.scan.camera.CameraPreviewImage
 import com.getbouncer.scan.framework.AggregateResultListener
 import com.getbouncer.scan.framework.AnalyzerLoopErrorListener
 import com.getbouncer.scan.framework.AnalyzerPool
 import com.getbouncer.scan.framework.Config
+import com.getbouncer.scan.framework.FetchedData
 import com.getbouncer.scan.framework.FiniteAnalyzerLoop
 import com.getbouncer.scan.framework.ProcessBoundAnalyzerLoop
-import com.getbouncer.scan.framework.TrackedImage
 import com.getbouncer.scan.framework.time.Duration
 import com.getbouncer.scan.framework.time.Rate
-import com.getbouncer.scan.framework.util.cacheFirstResultSuspend
 import com.getbouncer.scan.payment.FrameDetails
+import com.getbouncer.scan.payment.TextDetectModelManager
 import com.getbouncer.scan.payment.analyzer.NameAndExpiryAnalyzer
 import com.getbouncer.scan.payment.ml.AlphabetDetect
+import com.getbouncer.scan.payment.ml.AlphabetDetectModelManager
 import com.getbouncer.scan.payment.ml.CardDetect
+import com.getbouncer.scan.payment.ml.CardDetectModelManager
 import com.getbouncer.scan.payment.ml.ExpiryDetect
+import com.getbouncer.scan.payment.ml.ExpiryDetectModelManager
 import com.getbouncer.scan.payment.ml.SSDOcr
+import com.getbouncer.scan.payment.ml.SSDOcrModelManager
 import com.getbouncer.scan.payment.ml.TextDetect
 import com.getbouncer.scan.ui.ScanFlow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
+@Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class SavedFrame(
     val pan: String?,
-    val frame: SSDOcr.Input,
+    val frame: MainLoopAnalyzer.Input,
     val details: FrameDetails,
 )
 
+@Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 data class SavedFrameType(
     val hasCard: Boolean,
     val hasPan: Boolean,
@@ -53,38 +64,17 @@ data class SavedFrameType(
 /**
  * This class contains the logic required for analyzing a credit card for scanning.
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+@Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 open class CardScanFlow(
     private val enableNameExtraction: Boolean,
     private val enableExpiryExtraction: Boolean,
     private val scanResultListener: AggregateResultListener<MainLoopAggregator.InterimResult, MainLoopAggregator.FinalResult>,
     private val scanErrorListener: AnalyzerLoopErrorListener,
-    private val completionResultListener: CompletionLoopListener,
 ) : ScanFlow {
     companion object {
         private const val MAX_COMPLETION_LOOP_FRAMES_FAST_DEVICE = 8
         private const val MAX_COMPLETION_LOOP_FRAMES_SLOW_DEVICE = 5
-
-        /**
-         * This field represents whether the flow was initialized with name and expiry enabled.
-         */
-        var attemptedNameAndExpiryInitialization = false
-            private set
-
-        private val getSsdOcrModel = cacheFirstResultSuspend { context: Context, forImmediateUse: Boolean ->
-            SSDOcr.ModelFetcher(context).fetchData(forImmediateUse)
-        }
-        private val getCardDetectModel = cacheFirstResultSuspend { context: Context, forImmediateUse: Boolean ->
-            CardDetect.ModelFetcher(context).fetchData(forImmediateUse)
-        }
-        private val getTextDetectorModel = cacheFirstResultSuspend { context: Context, forImmediateUse: Boolean ->
-            TextDetect.ModelFetcher(context).fetchData(forImmediateUse)
-        }
-        private val getAlphabetDetectorModel = cacheFirstResultSuspend { context: Context, forImmediateUse: Boolean ->
-            AlphabetDetect.ModelFetcher(context).fetchData(forImmediateUse)
-        }
-        private val getExpiryDetectorModel = cacheFirstResultSuspend { context: Context, forImmediateUse: Boolean ->
-            ExpiryDetect.ModelFetcher(context).fetchData(forImmediateUse)
-        }
 
         /**
          * Warm up the analyzers for card scanner. This method is optional, but will increase the speed at which the
@@ -93,20 +83,47 @@ open class CardScanFlow(
          * @param context: A context to use for warming up the analyzers.
          */
         @JvmStatic
-        fun warmUp(context: Context, apiKey: String, initializeNameAndExpiryExtraction: Boolean) {
+        @Deprecated("Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+        suspend fun prepareScan(
+            context: Context,
+            apiKey: String,
+            initializeNameAndExpiryExtraction: Boolean,
+            forImmediateUse: Boolean,
+        ) = withContext(Dispatchers.IO) {
             Config.apiKey = apiKey
+            val deferredFetchers = mutableListOf<Deferred<FetchedData>>()
 
-            // pre-fetch all of the models used by this flow.
-            GlobalScope.launch(Dispatchers.IO) { getSsdOcrModel(context, false) }
-            GlobalScope.launch(Dispatchers.IO) { getCardDetectModel(context, false) }
+            deferredFetchers.add(async { SSDOcrModelManager.fetchModel(context, forImmediateUse) })
+            deferredFetchers.add(async { CardDetectModelManager.fetchModel(context, forImmediateUse) })
 
             if (initializeNameAndExpiryExtraction) {
-                attemptedNameAndExpiryInitialization = true
-                GlobalScope.launch(Dispatchers.IO) { getTextDetectorModel(context, false) }
-                GlobalScope.launch(Dispatchers.IO) { getAlphabetDetectorModel(context, false) }
-                GlobalScope.launch(Dispatchers.IO) { getExpiryDetectorModel(context, false) }
+                deferredFetchers.add(async { TextDetectModelManager.fetchModel(context, forImmediateUse) })
+                deferredFetchers.add(async { AlphabetDetectModelManager.fetchModel(context, forImmediateUse) })
+                deferredFetchers.add(async { ExpiryDetectModelManager.fetchModel(context, forImmediateUse) })
             }
+
+            deferredFetchers.fold(true) { acc, deferred -> acc && deferred.await().successfullyFetched }
         }
+
+        /**
+         * Determine if the scan is supported
+         */
+        @JvmStatic
+        @Deprecated(
+            message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+            replaceWith = ReplaceWith("StripeCardScan")
+        )
+        fun isSupported(context: Context) = CameraAdapter.isCameraSupported(context)
+
+        /**
+         * Determine if the scan models are available (have been warmed up)
+         */
+        @JvmStatic
+        @Deprecated(
+            message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+            replaceWith = ReplaceWith("StripeCardScan")
+        )
+        fun isScanReady() = runBlocking { SSDOcrModelManager.isReady() && CardDetectModelManager.isReady() }
     }
 
     /**
@@ -114,33 +131,45 @@ open class CardScanFlow(
      */
     private var canceled = false
 
+    private var mainLoopAnalyzerPool: AnalyzerPool<MainLoopAnalyzer.Input, MainLoopState, MainLoopAnalyzer.Prediction>? = null
     private var mainLoopAggregator: MainLoopAggregator? = null
-    private var mainLoop: ProcessBoundAnalyzerLoop<SSDOcr.Input, MainLoopState, MainLoopAnalyzer.Prediction>? = null
+    private var mainLoop: ProcessBoundAnalyzerLoop<MainLoopAnalyzer.Input, MainLoopState, MainLoopAnalyzer.Prediction>? = null
     private var mainLoopJob: Job? = null
+
+    private var completionLoopAnalyzerPool: AnalyzerPool<SavedFrame, Unit, CompletionLoopAnalyzer.Prediction>? = null
+    private var completionLoop: FiniteAnalyzerLoop<SavedFrame, Unit, CompletionLoopAnalyzer.Prediction>? = null
+    private var completionLoopJob: Job? = null
 
     /**
      * Start the image processing flow for scanning a card.
      *
      * @param context: The context used to download analyzers if needed
      * @param imageStream: The flow of images to process
-     * @param previewSize: The size of the preview frame where the view finder is located
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan")
+    )
     override fun startFlow(
         context: Context,
-        imageStream: Flow<TrackedImage>,
-        previewSize: Size,
+        imageStream: Flow<CameraPreviewImage<Bitmap>>,
         viewFinder: Rect,
         lifecycleOwner: LifecycleOwner,
         coroutineScope: CoroutineScope
-    ) = coroutineScope.launch {
+    ) = coroutineScope.launch(Dispatchers.Main) {
         val listener =
             object : AggregateResultListener<MainLoopAggregator.InterimResult, MainLoopAggregator.FinalResult> {
                 override suspend fun onResult(result: MainLoopAggregator.FinalResult) {
                     mainLoop?.unsubscribe()
                     mainLoop = null
 
-                    mainLoopJob?.cancel()
+                    mainLoopJob?.apply { if (isActive) { cancel() } }
+                    mainLoopJob = null
+
                     mainLoopAggregator = null
+
+                    mainLoopAnalyzerPool?.closeAllAnalyzers()
+                    mainLoopAnalyzerPool = null
 
                     scanResultListener.onResult(result)
                 }
@@ -158,27 +187,27 @@ open class CardScanFlow(
             return@launch
         }
 
-        mainLoopAggregator = MainLoopAggregator(listener).also { mainLoopOcrAggregator ->
+        mainLoopAggregator = MainLoopAggregator(listener).also { aggregator ->
             // make this result aggregator pause and reset when the lifecycle pauses.
-            mainLoopOcrAggregator.bindToLifecycle(lifecycleOwner)
+            aggregator.bindToLifecycle(lifecycleOwner)
 
             val analyzerPool = AnalyzerPool.of(
                 MainLoopAnalyzer.Factory(
-                    SSDOcr.Factory(context, getSsdOcrModel(context, true)),
-                    CardDetect.Factory(context, getCardDetectModel(context, true)),
+                    SSDOcr.Factory(context, SSDOcrModelManager.fetchModel(context, forImmediateUse = true, isOptional = false)),
+                    CardDetect.Factory(context, CardDetectModelManager.fetchModel(context, forImmediateUse = true, isOptional = false)),
                 )
             )
+            mainLoopAnalyzerPool = analyzerPool
 
             mainLoop = ProcessBoundAnalyzerLoop(
                 analyzerPool = analyzerPool,
-                resultHandler = mainLoopOcrAggregator,
+                resultHandler = aggregator,
                 analyzerLoopErrorListener = scanErrorListener,
             ).apply {
-                subscribeTo(
+                mainLoopJob = subscribeTo(
                     imageStream.map {
-                        SSDOcr.Input(
-                            fullImage = it,
-                            previewSize = previewSize,
+                        MainLoopAnalyzer.Input(
+                            cameraPreviewImage = it,
                             cardFinder = viewFinder,
                         )
                     },
@@ -186,13 +215,16 @@ open class CardScanFlow(
                 )
             }
         }
-    }.let { Unit }
+    }.let { }
 
     /**
      * In the event that the scan cannot complete, halt the flow to halt analyzers and free up CPU and memory.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan")
+    )
     override fun cancelFlow() {
-        canceled = true
         canceled = true
 
         mainLoopAggregator?.run { cancel() }
@@ -201,12 +233,25 @@ open class CardScanFlow(
         mainLoop?.unsubscribe()
         mainLoop = null
 
+        mainLoopAnalyzerPool?.closeAllAnalyzers()
+        mainLoopAnalyzerPool = null
+
         mainLoopJob?.apply { if (isActive) { cancel() } }
         mainLoopJob = null
+
+        completionLoop?.cancel()
+        completionLoop = null
+
+        completionLoopAnalyzerPool?.closeAllAnalyzers()
+        completionLoopAnalyzerPool = null
+
+        completionLoopJob?.apply { if (isActive) { cancel() } }
+        completionLoopJob = null
     }
 
     open fun launchCompletionLoop(
         context: Context,
+        completionResultListener: CompletionLoopListener,
         savedFrames: Collection<SavedFrame>,
         isFastDevice: Boolean,
         coroutineScope: CoroutineScope,
@@ -218,41 +263,70 @@ open class CardScanFlow(
         val analyzerPool = AnalyzerPool.of(
             CompletionLoopAnalyzer.Factory(
                 nameAndExpiryFactory = NameAndExpiryAnalyzer.Factory(
-                    textDetectFactory = TextDetect.Factory(context, getTextDetectorModel(context, true)),
-                    alphabetDetectFactory = AlphabetDetect.Factory(context, getAlphabetDetectorModel(context, true)),
-                    expiryDetectFactory = ExpiryDetect.Factory(context, getExpiryDetectorModel(context, true)),
+                    textDetectFactory = TextDetect.Factory(
+                        context,
+                        TextDetectModelManager.fetchModel(context, forImmediateUse = true, isOptional = true)
+                    ),
+                    alphabetDetectFactory = AlphabetDetect.Factory(
+                        context,
+                        AlphabetDetectModelManager.fetchModel(context, forImmediateUse = true, isOptional = true)
+                    ),
+                    expiryDetectFactory = ExpiryDetect.Factory(
+                        context,
+                        ExpiryDetectModelManager.fetchModel(context, forImmediateUse = true, isOptional = true)
+                    ),
                     runNameExtraction = enableNameExtraction && isFastDevice,
                     runExpiryExtraction = enableExpiryExtraction,
                 )
             )
         )
+        completionLoopAnalyzerPool = analyzerPool
 
-        FiniteAnalyzerLoop(
+        completionLoop = FiniteAnalyzerLoop(
             analyzerPool = analyzerPool,
-            resultHandler = CompletionLoopAggregator(completionResultListener),
+            resultHandler = CompletionLoopAggregator(object : CompletionLoopListener {
+                override fun onCompletionLoopDone(result: CompletionLoopResult) {
+                    completionLoop = null
+
+                    completionLoopAnalyzerPool?.closeAllAnalyzers()
+                    completionLoopAnalyzerPool = null
+
+                    completionLoopJob?.apply { if (isActive) { cancel() } }
+                    completionLoopJob = null
+
+                    completionResultListener.onCompletionLoopDone(result)
+                }
+
+                override fun onCompletionLoopFrameProcessed(
+                    result: CompletionLoopAnalyzer.Prediction,
+                    frame: SavedFrame
+                ) = completionResultListener.onCompletionLoopFrameProcessed(result, frame)
+            }),
             analyzerLoopErrorListener = object : AnalyzerLoopErrorListener {
                 override fun onAnalyzerFailure(t: Throwable): Boolean {
                     Log.e(Config.logTag, "Completion loop analyzer failure", t)
-                    runBlocking {
-                        completionResultListener.onCompletionLoopDone(CompletionLoopResult())
-                    }
+                    completionResultListener.onCompletionLoopDone(CompletionLoopResult())
                     return true // terminate the loop on any analyzer failures
                 }
 
                 override fun onResultFailure(t: Throwable): Boolean {
                     Log.e(Config.logTag, "Completion loop result failures", t)
-                    runBlocking {
-                        completionResultListener.onCompletionLoopDone(CompletionLoopResult())
-                    }
+                    completionResultListener.onCompletionLoopDone(CompletionLoopResult())
                     return true // terminate the loop on any result failures
                 }
             }
-        ).process(savedFrames, coroutineScope)
-    }.let { Unit }
+        ).apply {
+            completionLoopJob = process(savedFrames, coroutineScope)
+        }
+    }.let { }
 
     /**
      * Select which frames to use in the completion loop.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan")
+    )
     open fun <SavedFrame> selectCompletionLoopFrames(
         frameRate: Rate,
         frames: Map<SavedFrameType, List<SavedFrame>>,

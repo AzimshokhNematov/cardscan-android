@@ -12,7 +12,6 @@ import com.getbouncer.scan.framework.time.Rate
 import com.getbouncer.scan.framework.util.FrameSaver
 import com.getbouncer.scan.payment.FrameDetails
 import com.getbouncer.scan.payment.card.isValidPan
-import com.getbouncer.scan.payment.ml.SSDOcr
 import kotlinx.coroutines.runBlocking
 
 private const val MAX_SAVED_FRAMES_PER_TYPE = 6
@@ -24,14 +23,16 @@ private const val MAX_SAVED_FRAMES_PER_TYPE = 6
  * This aggregator is a state machine. The full list of possible states are subclasses of [MainLoopState]. This was
  * written referencing this article: https://thoughtbot.com/blog/finite-state-machines-android-kotlin-good-times
  */
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
 class MainLoopAggregator(
     listener: AggregateResultListener<InterimResult, FinalResult>,
-) : ResultAggregator<SSDOcr.Input, MainLoopState, MainLoopAnalyzer.Prediction, MainLoopAggregator.InterimResult, MainLoopAggregator.FinalResult>(
+) : ResultAggregator<MainLoopAnalyzer.Input, MainLoopState, MainLoopAnalyzer.Prediction, MainLoopAggregator.InterimResult, MainLoopAggregator.FinalResult>(
     listener = listener,
     initialState = MainLoopState.Initial()
 ) {
 
     @Keep
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     data class FinalResult(
         val pan: String,
         val savedFrames: Map<SavedFrameType, List<SavedFrame>>,
@@ -39,9 +40,10 @@ class MainLoopAggregator(
     )
 
     @Keep
+    @Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
     data class InterimResult(
         val analyzerResult: MainLoopAnalyzer.Prediction,
-        val frame: SSDOcr.Input,
+        val frame: MainLoopAnalyzer.Input,
         val state: MainLoopState,
     )
 
@@ -56,7 +58,7 @@ class MainLoopAggregator(
     }
 
     override suspend fun aggregateResult(
-        frame: SSDOcr.Input,
+        frame: MainLoopAnalyzer.Input,
         result: MainLoopAnalyzer.Prediction
     ): Pair<InterimResult, FinalResult?> {
         val previousState = state
@@ -89,9 +91,9 @@ class MainLoopAggregator(
             ),
         )
 
-        frame.fullImage.tracker.trackResult("main_loop_aggregated")
+        frame.cameraPreviewImage.image.tracker.trackResult("main_loop_aggregated")
         if (Config.isDebug) {
-            Log.d(Config.logTag, "Delay between capture and process of image is ${frame.fullImage.tracker.startedAt.elapsedSince()}")
+            Log.d(Config.logTag, "Delay between capture and process of image is ${frame.cameraPreviewImage.image.tracker.startedAt.elapsedSince()}")
         }
 
         frameSaver.saveFrame(savedFrame, interimResult)

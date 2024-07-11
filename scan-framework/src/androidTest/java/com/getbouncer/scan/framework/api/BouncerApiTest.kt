@@ -7,8 +7,11 @@ import com.getbouncer.scan.framework.Stats
 import com.getbouncer.scan.framework.api.dto.AppInfo
 import com.getbouncer.scan.framework.api.dto.BouncerErrorResponse
 import com.getbouncer.scan.framework.api.dto.ClientDevice
+import com.getbouncer.scan.framework.api.dto.ModelVersion
 import com.getbouncer.scan.framework.api.dto.ScanStatistics
 import com.getbouncer.scan.framework.api.dto.StatsPayload
+import com.getbouncer.scan.framework.ml.getLoadedModelVersions
+import com.getbouncer.scan.framework.ml.trackModelLoaded
 import com.getbouncer.scan.framework.util.AppDetails
 import com.getbouncer.scan.framework.util.Device
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,8 +24,6 @@ import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class BouncerApiTest {
@@ -61,6 +62,8 @@ class BouncerApiTest {
             task1.trackResult("$i")
         }
 
+        trackModelLoaded("test_model_class", "test_model_vesion", 2, true)
+
         when (
             val result = postForResult(
                 context = appContext,
@@ -70,7 +73,8 @@ class BouncerApiTest {
                     scanId = "test_scan_id",
                     device = ClientDevice.fromDevice(Device.fromContext(testContext)),
                     app = AppInfo.fromAppDetails(AppDetails.fromContext(testContext)),
-                    scanStats = ScanStatistics.fromStats()
+                    scanStats = ScanStatistics.fromStats(),
+                    modelVersions = getLoadedModelVersions().map { ModelVersion.fromModelLoadDetails(it) },
                 ),
                 requestSerializer = StatsPayload.serializer(),
                 responseSerializer = ScanStatsResults.serializer(),
@@ -81,26 +85,6 @@ class BouncerApiTest {
                 assertEquals(200, result.responseCode)
             }
             else -> fail("Network result was not success: $result")
-        }
-    }
-
-    /**
-     * TODO: this method should use runBlockingTest instead of runBlocking. However, an issue with
-     * runBlockingTest currently fails when functions under test use withContext(Dispatchers.IO) or
-     * withContext(Dispatchers.Default).
-     *
-     * See https://github.com/Kotlin/kotlinx.coroutines/issues/1204 for details.
-     */
-    @Test
-    @LargeTest
-    fun validateApiKey() = runBlocking {
-        when (val result = validateApiKey(appContext)) {
-            is NetworkResult.Success -> {
-                assertEquals(200, result.responseCode)
-                assertTrue(result.body.isApiKeyValid)
-                assertNull(result.body.keyInvalidReason)
-            }
-            else -> fail("network result was not success: $result")
         }
     }
 

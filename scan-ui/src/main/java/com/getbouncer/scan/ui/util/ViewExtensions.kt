@@ -5,11 +5,8 @@ import android.content.res.Resources.NotFoundException
 import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.drawable.Animatable
-import android.os.Handler
-import android.os.Looper
 import android.util.TypedValue
 import android.view.View
-import android.view.animation.AnimationUtils
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.annotation.ColorInt
@@ -17,18 +14,24 @@ import androidx.annotation.ColorRes
 import androidx.annotation.DimenRes
 import androidx.annotation.DrawableRes
 import androidx.core.content.ContextCompat
-import com.getbouncer.scan.framework.time.Duration
-import com.getbouncer.scan.ui.R
 import kotlin.math.roundToInt
 
 /**
  * Determine if a view is visible.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.isVisible() = this.visibility == View.VISIBLE
 
 /**
  * Set a view's visibility.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.setVisible(visible: Boolean) {
     this.visibility = if (visible) View.VISIBLE else View.GONE
 }
@@ -36,51 +39,38 @@ fun View.setVisible(visible: Boolean) {
 /**
  * Make a view visible.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.show() = setVisible(true)
 
 /**
  * Make a view invisible.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.hide() = setVisible(false)
-
-/**
- * Fade in a view.
- */
-fun View.fadeIn(duration: Duration? = null) {
-    if (isVisible()) return
-
-    val animation = AnimationUtils.loadAnimation(this.context, R.anim.bouncer_fade_in)
-    visibility = View.INVISIBLE
-    if (duration != null) {
-        animation.duration = duration.inMilliseconds.toLong()
-    }
-    startAnimation(animation)
-    show()
-}
-
-/**
- * Fade out a view.
- */
-fun View.fadeOut(duration: Duration? = null) {
-    if (!isVisible()) return
-
-    val animation = AnimationUtils.loadAnimation(this.context, R.anim.bouncer_fade_out)
-    if (duration != null) {
-        animation.duration = duration.inMilliseconds.toLong()
-    }
-    startAnimation(animation)
-    Handler(Looper.getMainLooper()).postDelayed({ hide() }, duration?.inMilliseconds?.toLong() ?: 400)
-}
 
 /**
  * Get a [ColorInt] from a [ColorRes].
  */
 @ColorInt
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Context.getColorByRes(@ColorRes colorRes: Int) = ContextCompat.getColor(this, colorRes)
 
 /**
  * Get a [Drawable] from a [DrawableRes]
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Context.getDrawableByRes(@DrawableRes drawableRes: Int) = ContextCompat.getDrawable(
     this,
     drawableRes
@@ -89,6 +79,10 @@ fun Context.getDrawableByRes(@DrawableRes drawableRes: Int) = ContextCompat.getD
 /**
  * Set the image of an [ImageView] using a [DrawableRes].
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun ImageView.setDrawable(@DrawableRes drawableRes: Int) {
     this.setImageDrawable(this.context.getDrawableByRes(drawableRes))
 }
@@ -96,6 +90,10 @@ fun ImageView.setDrawable(@DrawableRes drawableRes: Int) {
 /**
  * Set the image of an [ImageView] using a [DrawableRes] and start the animation.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun ImageView.startAnimation(@DrawableRes drawableRes: Int) {
     val d = this.context.getDrawableByRes(drawableRes)
     setImageDrawable(d)
@@ -107,16 +105,28 @@ fun ImageView.startAnimation(@DrawableRes drawableRes: Int) {
 /**
  * Get a rect from a view.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.asRect() = Rect(left, top, right, bottom)
 
 /**
  * Convert an int in DP to pixels.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Context.dpToPixels(dp: Int) = (dp * resources.displayMetrics.density).roundToInt()
 
 /**
  * This is copied from Resources.java for API 29 so that we can continue to support API 21.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun Context.getFloatResource(@DimenRes id: Int): Float {
     val value = TypedValue()
     resources.getValue(id, value, true)
@@ -129,6 +139,10 @@ fun Context.getFloatResource(@DimenRes id: Int): Float {
 /**
  * Set the size of a text field using a dimension.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun TextView.setTextSizeByRes(@DimenRes id: Int) {
     setTextSize(TypedValue.COMPLEX_UNIT_PX, this.resources.getDimension(id))
 }
@@ -136,4 +150,8 @@ fun TextView.setTextSizeByRes(@DimenRes id: Int) {
 /**
  * Determine the center point of a view.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 fun View.centerPoint() = PointF(left + width / 2F, top + height / 2F)

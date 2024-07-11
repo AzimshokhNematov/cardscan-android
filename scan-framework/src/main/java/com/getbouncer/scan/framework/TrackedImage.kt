@@ -1,11 +1,10 @@
 package com.getbouncer.scan.framework
 
-import android.graphics.Bitmap
-
 /**
  * An image with a stat tracker.
  */
-data class TrackedImage(
-    val image: Bitmap,
+@Deprecated(message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan")
+data class TrackedImage<ImageType>(
+    val image: ImageType,
     val tracker: StatTracker,
 )

@@ -1,16 +1,20 @@
 package com.getbouncer.scan.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
-import android.util.Size
 import androidx.lifecycle.LifecycleOwner
-import com.getbouncer.scan.framework.TrackedImage
+import com.getbouncer.scan.camera.CameraPreviewImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 
 /**
  * A flow for scanning something. This manages the callbacks and lifecycle of the flow.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 interface ScanFlow {
 
     /**
@@ -18,7 +22,6 @@ interface ScanFlow {
      *
      * @param context: The context used to download analyzers if needed
      * @param imageStream: The flow of images to process
-     * @param previewSize: The size of the preview frame where the view finder is located
      * @param viewFinder: The location of the view finder in the previewSize
      * @param lifecycleOwner: The activity that owns this flow. The flow will pause if the activity
      * is paused
@@ -26,8 +29,7 @@ interface ScanFlow {
      */
     fun startFlow(
         context: Context,
-        imageStream: Flow<TrackedImage>,
-        previewSize: Size,
+        imageStream: Flow<CameraPreviewImage<Bitmap>>,
         viewFinder: Rect,
         lifecycleOwner: LifecycleOwner,
         coroutineScope: CoroutineScope

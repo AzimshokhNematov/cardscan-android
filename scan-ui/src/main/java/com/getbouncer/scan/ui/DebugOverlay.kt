@@ -11,6 +11,10 @@ import android.view.View
 import androidx.annotation.VisibleForTesting
 
 @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 internal fun RectF.scaled(scaledSize: Size): RectF {
     return RectF(
         this.left * scaledSize.width,
@@ -23,6 +27,10 @@ internal fun RectF.scaled(scaledSize: Size): RectF {
 /**
  * A detection box to display on the debug overlay.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 data class DebugDetectionBox(
     val rect: RectF,
 
@@ -31,6 +39,10 @@ data class DebugDetectionBox(
     val label: String
 )
 
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 class DebugOverlay(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -56,7 +68,9 @@ class DebugOverlay(context: Context, attrs: AttributeSet? = null) : View(context
     }
 
     private fun drawBoxes(canvas: Canvas) {
-        boxes?.forEach {
+        // This should be using boxes?.forEach, but doing so seems to require API 24. It's unclear why this won't
+        // use the kotlin.collections version of `forEach`, but it's not during compile.
+        for (it in boxes ?: emptyList()) {
             paint.color = getPaintColor(it.confidence)
             textPaint.color = getPaintColor(it.confidence)
             val rect = it.rect.scaled(Size(this.width, this.height))
@@ -78,5 +92,9 @@ class DebugOverlay(context: Context, attrs: AttributeSet? = null) : View(context
         this.boxes = boxes
         invalidate()
         requestLayout()
+    }
+
+    fun clearBoxes() {
+        setBoxes(emptyList())
     }
 }

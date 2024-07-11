@@ -1,22 +1,22 @@
 package com.getbouncer.scan.payment.ml
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Size
+import androidx.annotation.VisibleForTesting
 import com.getbouncer.scan.framework.FetchedData
 import com.getbouncer.scan.framework.TrackedImage
-import com.getbouncer.scan.framework.UpdatingResourceFetcher
+import com.getbouncer.scan.framework.image.MLImage
+import com.getbouncer.scan.framework.image.scale
+import com.getbouncer.scan.framework.image.toMLImage
 import com.getbouncer.scan.framework.ml.TFLAnalyzerFactory
 import com.getbouncer.scan.framework.ml.TensorFlowLiteAnalyzer
 import com.getbouncer.scan.framework.ml.ssd.adjustLocations
 import com.getbouncer.scan.framework.ml.ssd.softMax
 import com.getbouncer.scan.framework.ml.ssd.toRectForm
-import com.getbouncer.scan.framework.util.intersectionWith
-import com.getbouncer.scan.framework.util.projectRegionOfInterest
 import com.getbouncer.scan.framework.util.reshape
-import com.getbouncer.scan.framework.util.toRect
-import com.getbouncer.scan.payment.R
-import com.getbouncer.scan.payment.crop
+import com.getbouncer.scan.payment.cropCameraPreviewToViewFinder
 import com.getbouncer.scan.payment.hasOpenGl31
 import com.getbouncer.scan.payment.ml.ssd.DetectionBox
 import com.getbouncer.scan.payment.ml.ssd.OcrFeatureMapSizes
@@ -24,9 +24,7 @@ import com.getbouncer.scan.payment.ml.ssd.combinePriors
 import com.getbouncer.scan.payment.ml.ssd.determineLayoutAndFilter
 import com.getbouncer.scan.payment.ml.ssd.extractPredictions
 import com.getbouncer.scan.payment.ml.ssd.rearrangeOCRArray
-import com.getbouncer.scan.payment.scale
-import com.getbouncer.scan.payment.size
-import com.getbouncer.scan.payment.toRGBByteBuffer
+import kotlinx.coroutines.runBlocking
 import org.tensorflow.lite.Interpreter
 import java.nio.ByteBuffer
 
@@ -72,8 +70,10 @@ private const val PROB_THRESHOLD = 0.50f
 private const val IOU_THRESHOLD = 0.50f
 private const val CENTER_VARIANCE = 0.1f
 private const val SIZE_VARIANCE = 0.2f
-private const val VERTICAL_THRESHOLD = 2.0f
 private const val LIMIT = 20
+
+@VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+internal const val VERTICAL_THRESHOLD = 2.0f
 
 private val FEATURE_MAP_SIZES =
     OcrFeatureMapSizes(
@@ -86,62 +86,53 @@ private val FEATURE_MAP_SIZES =
 /**
  * This value should never change, and is thread safe.
  */
-private val PRIORS = combinePriors()
+private val PRIORS = combinePriors(SSDOcr.Factory.TRAINED_IMAGE_SIZE)
 
 /**
  * This model performs SSD OCR recognition on a card.
  */
+@Deprecated(
+    message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+    replaceWith = ReplaceWith("StripeCardScan"),
+)
 class SSDOcr private constructor(interpreter: Interpreter) :
-    TensorFlowLiteAnalyzer<SSDOcr.Input, Array<ByteBuffer>, SSDOcr.Prediction, Map<Int, Array<FloatArray>>>(interpreter) {
+    TensorFlowLiteAnalyzer<SSDOcr.Input, Array<ByteBuffer>, SSDOcr.Prediction, Map<Int, Array<FloatArray>>>(
+        interpreter
+    ) {
 
-    data class Input(val fullImage: TrackedImage, val previewSize: Size, val cardFinder: Rect)
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    data class Input(val ssdOcrImage: TrackedImage<MLImage>)
 
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     data class Prediction(val pan: String, val detectedBoxes: List<DetectionBox>)
 
     companion object {
         /**
-         * Calculate the crop from the full image for the credit card based on the view finder
-         * within the preview size.
-         *
-         * Note: This algorithm makes some assumptions:
-         * 1. the previewImage and the fullImage are centered relative to each other.
-         * 2. the fullImage circumscribes the previewImage. I.E. they share at least one field of
-         *    view, and the previewImage's fields of view are smaller than or the same size as the
-         *    fullImage's
-         * 3. the fullImage and the previewImage have the same orientation
+         * Convert a camera preview image into a SSDOcr input
          */
-        fun cropImage(input: Input): TrackedImage {
-            require(
-                input.cardFinder.left >= 0 &&
-                    input.cardFinder.right <= input.previewSize.width &&
-                    input.cardFinder.top >= 0 &&
-                    input.cardFinder.bottom <= input.previewSize.height
-            ) { "Card finder is outside preview image bounds ${input.cardFinder} ${input.previewSize}" }
-
-            // Scale the cardFinder to match the full image
-            val projectedViewFinder = input
-                .previewSize
-                .projectRegionOfInterest(
-                    toSize = input.fullImage.image.size(),
-                    regionOfInterest = input.cardFinder
-                )
-                .intersectionWith(input.fullImage.image.size().toRect())
-
-            return TrackedImage(
-                image = input.fullImage.image.crop(projectedViewFinder),
-                tracker = input.fullImage.tracker,
+        fun cameraPreviewToInput(
+            cameraPreviewImage: TrackedImage<Bitmap>,
+            previewBounds: Rect,
+            cardFinder: Rect
+        ) = Input(
+            TrackedImage(
+                cropCameraPreviewToViewFinder(cameraPreviewImage.image, previewBounds, cardFinder)
+                    .scale(Factory.TRAINED_IMAGE_SIZE)
+                    .toMLImage(mean = IMAGE_MEAN, std = IMAGE_STD).also {
+                        runBlocking { cameraPreviewImage.tracker.trackResult("ocr_image_transform") }
+                    },
+                cameraPreviewImage.tracker
             )
-        }
+        )
     }
 
-    override suspend fun transformData(data: Input): Array<ByteBuffer> = arrayOf(
-        cropImage(data)
-            .image
-            .scale(Factory.TRAINED_IMAGE_SIZE)
-            .toRGBByteBuffer(mean = IMAGE_MEAN, std = IMAGE_STD).also {
-                data.fullImage.tracker.trackResult("ocr_image_transform")
-            }
-    )
+    override suspend fun transformData(data: Input): Array<ByteBuffer> = arrayOf(data.ssdOcrImage.image.getData())
 
     override suspend fun interpretMLOutput(
         data: Input,
@@ -185,7 +176,7 @@ class SSDOcr private constructor(interpreter: Interpreter) :
 
         val predictedNumber = detectedBoxes.map { it.label }.joinToString("")
 
-        data.fullImage.tracker.trackResult("ocr_prediction_complete")
+        data.ssdOcrImage.tracker.trackResult("ocr_prediction_complete")
         return Prediction(predictedNumber, detectedBoxes)
     }
 
@@ -205,14 +196,18 @@ class SSDOcr private constructor(interpreter: Interpreter) :
     /**
      * A factory for creating instances of this analyzer.
      */
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     class Factory(
         context: Context,
         fetchedModel: FetchedData,
         threads: Int = DEFAULT_THREADS,
-    ) : TFLAnalyzerFactory<Input, Unit, Prediction, SSDOcr>(context, fetchedModel) {
+    ) : TFLAnalyzerFactory<Input, Prediction, SSDOcr>(context, fetchedModel) {
         companion object {
             private const val USE_GPU = false
-            private const val DEFAULT_THREADS = 2
+            private const val DEFAULT_THREADS = 4
 
             val TRAINED_IMAGE_SIZE = Size(600, 375)
         }
@@ -223,17 +218,5 @@ class SSDOcr private constructor(interpreter: Interpreter) :
             .setNumThreads(threads)
 
         override suspend fun newInstance(): SSDOcr? = createInterpreter()?.let { SSDOcr(it) }
-    }
-
-    /**
-     * A fetcher for downloading model data.
-     */
-    class ModelFetcher(context: Context) : UpdatingResourceFetcher(context) {
-        override val resource: Int = R.raw.darknite_1_1_1_16
-        override val resourceModelVersion: String = "1.1.1.16"
-        override val resourceModelHash: String = "8d8e3f79aa0783ab0cfa5c8d65d663a9da6ba99401efb2298aaaee387c3b00d6"
-        override val resourceModelHashAlgorithm: String = "SHA-256"
-        override val modelClass: String = "ocr"
-        override val modelFrameworkVersion: Int = 1
     }
 }
