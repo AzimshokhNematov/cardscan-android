@@ -147,6 +147,9 @@ private val PAN_FORMAT_TABLE: Map<CardIssuer, Map<Int, PanFormatter>> = mapOf(
 
     CardIssuer.Humo to mapOf(
         16 to PanFormatter(4, 4, 4, 4)
+    ),
+    CardIssuer.ATTO to mapOf(
+        16 to PanFormatter(4, 4, 4, 4)
     )
 )
 

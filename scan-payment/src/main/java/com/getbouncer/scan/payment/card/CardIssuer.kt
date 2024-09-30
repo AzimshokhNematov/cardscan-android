@@ -73,8 +73,25 @@ sealed class CardIssuer(open val displayName: String) : Parcelable {
         replaceWith = ReplaceWith("StripeCardScan"),
     )
     object Visa : CardIssuer("Visa")
+    @Parcelize
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     object Uzcard : CardIssuer("Uzcard")
+    @Parcelize
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
     object Humo : CardIssuer("Humo")
+
+    @Parcelize
+    @Deprecated(
+        message = "Replaced by stripe card scan. See https://github.com/stripe/stripe-android/tree/master/stripecardscan",
+        replaceWith = ReplaceWith("StripeCardScan"),
+    )
+    object ATTO : CardIssuer("Atto")
 }
 
 /**

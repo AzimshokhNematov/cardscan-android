@@ -21,6 +21,7 @@ private const val SAMPLE_UNIONPAY_19_PAN = "6212345678900000003"
 private const val SAMPLE_VISA_PAN = "4847186095118770"
 private const val SAMPLE_UZCARD_PAN = "8600123456789012"
 private const val SAMPLE_HUMO_PAN = "9860123456789012"
+private const val SAMPLE_ATTO_PAN = "9987001122334455"
 
 private const val SAMPLE_AMEX_IIN = "340000"
 private const val SAMPLE_DINERS_CLUB_IIN = "300000"
@@ -78,6 +79,7 @@ class PaymentCardTest {
         assertEquals(CardIssuer.Visa, getCardIssuer(SAMPLE_VISA_PAN))
         assertEquals(CardIssuer.Uzcard, getCardIssuer(SAMPLE_UZCARD_PAN))
         assertEquals(CardIssuer.Humo, getCardIssuer(SAMPLE_HUMO_PAN))
+        assertEquals(CardIssuer.ATTO, getCardIssuer(SAMPLE_ATTO_PAN))
         assertEquals(SAMPLE_CUSTOM_CARD_ISSUER, getCardIssuer(SAMPLE_CUSTOM_16_PAN))
         assertEquals(SAMPLE_CUSTOM_CARD_ISSUER, getCardIssuer(SAMPLE_CUSTOM_17_PAN))
         assertEquals(SAMPLE_CUSTOM_CARD_ISSUER, getCardIssuer(SAMPLE_CUSTOM_18_PAN))
@@ -246,6 +248,7 @@ class PaymentCardTest {
         assertEquals("Visa", formatIssuer(CardIssuer.Visa))
         assertEquals("Uzcard", formatIssuer(CardIssuer.Uzcard))
         assertEquals("Humo", formatIssuer(CardIssuer.Humo))
+        assertEquals("ATTO", formatIssuer(CardIssuer.ATTO))
         assertEquals("Custom", formatIssuer(SAMPLE_CUSTOM_CARD_ISSUER))
         assertEquals("Advanced Custom", formatIssuer(SAMPLE_ADVANCED_CUSTOM_CARD_ISSUER))
     }
